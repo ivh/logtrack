@@ -49,11 +49,26 @@ UNFOLD = {
     'SITE_SUBHEADER': 'Stockar & virke',
     'SIDEBAR': {
         'show_search': False,
-        'show_all_applications': True,
+        'show_all_applications': False,
         'navigation': [
             {
-                'title': 'Rapporter',
+                'title': 'Sågverk',
                 'items': [
+                    {
+                        'title': 'Stockar',
+                        'icon': 'forest',
+                        'link': reverse_lazy('admin:mill_log_changelist'),
+                    },
+                    {
+                        'title': 'Virke',
+                        'icon': 'inventory_2',
+                        'link': reverse_lazy('admin:mill_lumber_changelist'),
+                    },
+                    {
+                        'title': 'Trädslag',
+                        'icon': 'park',
+                        'link': reverse_lazy('admin:mill_species_changelist'),
+                    },
                     {
                         'title': 'Avkastning',
                         'icon': 'monitoring',

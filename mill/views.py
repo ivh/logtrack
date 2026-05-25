@@ -1,5 +1,6 @@
 from datetime import date
 
+from django.contrib import admin
 from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import render
 
@@ -52,6 +53,8 @@ def yield_report(request):
         request,
         "mill/yield_report.html",
         {
+            **admin.site.each_context(request),
+            "title": "Avkastningsrapport",
             "rows": rows,
             "total_count": total_count,
             "total_log_v": total_log_v,

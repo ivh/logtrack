@@ -1,73 +1,72 @@
-<!doctype html>
-<html lang="sv">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Avkastningsrapport — Logtrack</title>
-<style>
-  body { font-family: -apple-system, system-ui, sans-serif; margin: 1rem; color: #222; }
-  h1 { margin-top: 0; }
-  form { margin-bottom: 1.5rem; display: flex; gap: .5rem; flex-wrap: wrap; align-items: end; }
-  label { font-size: .85rem; color: #555; display: block; }
-  input[type=date] { padding: .4rem; font-size: 1rem; }
-  button { padding: .5rem 1rem; font-size: 1rem; }
-  table { border-collapse: collapse; width: 100%; max-width: 800px; }
-  th, td { padding: .55rem .75rem; border-bottom: 1px solid #ddd; text-align: right; }
-  th:first-child, td:first-child { text-align: left; }
-  tfoot td { font-weight: 600; border-top: 2px solid #444; border-bottom: none; }
-  a.back { display: inline-block; margin-bottom: 1rem; }
-</style>
-</head>
-<body>
-<a class="back" href="/admin/">&larr; Admin</a>
-<h1>Avkastningsrapport</h1>
+{% extends "admin/base_site.html" %}
 
-<form method="get">
+{% block title %}Avkastningsrapport{% endblock %}
+
+{% block breadcrumbs %}
+<div class="px-4 lg:px-8">
+  <div class="container mx-auto -my-3">
+    <div class="flex items-center text-sm gap-2 text-font-subtle-light dark:text-font-subtle-dark py-3">
+      <a href="{% url 'admin:index' %}" class="hover:underline">Hem</a>
+      <span>/</span>
+      <span>Avkastningsrapport</span>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="get" class="flex flex-wrap items-end gap-3 mb-6">
   <div>
-    <label for="from">Från</label>
-    <input type="date" id="from" name="from" value="{{ date_from }}">
+    <label for="from" class="block text-sm mb-1">Från</label>
+    <input type="date" id="from" name="from" value="{{ date_from }}"
+           class="border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 rounded-md px-3 py-2 text-sm">
   </div>
   <div>
-    <label for="to">Till</label>
-    <input type="date" id="to" name="to" value="{{ date_to }}">
+    <label for="to" class="block text-sm mb-1">Till</label>
+    <input type="date" id="to" name="to" value="{{ date_to }}"
+           class="border border-base-200 dark:border-base-700 bg-white dark:bg-base-900 rounded-md px-3 py-2 text-sm">
   </div>
-  <button type="submit">Filtrera</button>
+  <button type="submit"
+          class="bg-primary-600 hover:bg-primary-700 text-white rounded-md px-4 py-2 text-sm font-medium">
+    Filtrera
+  </button>
 </form>
 
 {% if total_count %}
-<table>
-  <thead>
-    <tr>
-      <th>Trädslag</th>
-      <th>Stockar</th>
-      <th>Stock m³</th>
-      <th>Virke m³</th>
-      <th>Avkastning %</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for row in rows %}
-    <tr>
-      <td>{{ row.species }}</td>
-      <td>{{ row.count }}</td>
-      <td>{{ row.log_v|floatformat:3 }}</td>
-      <td>{{ row.lumber_v|floatformat:3 }}</td>
-      <td>{% if row.yield_pct is not None %}{{ row.yield_pct|floatformat:1 }}%{% else %}—{% endif %}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-  <tfoot>
-    <tr>
-      <td>Totalt</td>
-      <td>{{ total_count }}</td>
-      <td>{{ total_log_v|floatformat:3 }}</td>
-      <td>{{ total_lumber_v|floatformat:3 }}</td>
-      <td>{% if total_yield is not None %}{{ total_yield|floatformat:1 }}%{% else %}—{% endif %}</td>
-    </tr>
-  </tfoot>
-</table>
+<div class="overflow-x-auto border border-base-200 dark:border-base-700 rounded-md">
+  <table class="w-full text-sm">
+    <thead class="bg-base-50 dark:bg-base-800">
+      <tr class="text-left">
+        <th class="px-4 py-2">Trädslag</th>
+        <th class="px-4 py-2 text-right">Stockar</th>
+        <th class="px-4 py-2 text-right">Stock m³</th>
+        <th class="px-4 py-2 text-right">Virke m³</th>
+        <th class="px-4 py-2 text-right">Avkastning %</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr class="border-t border-base-200 dark:border-base-700">
+        <td class="px-4 py-2">{{ row.species }}</td>
+        <td class="px-4 py-2 text-right">{{ row.count }}</td>
+        <td class="px-4 py-2 text-right">{{ row.log_v|floatformat:3 }}</td>
+        <td class="px-4 py-2 text-right">{{ row.lumber_v|floatformat:3 }}</td>
+        <td class="px-4 py-2 text-right">{% if row.yield_pct is not None %}{{ row.yield_pct|floatformat:1 }}%{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot class="bg-base-50 dark:bg-base-800 font-semibold">
+      <tr class="border-t-2 border-base-300 dark:border-base-600">
+        <td class="px-4 py-2">Totalt</td>
+        <td class="px-4 py-2 text-right">{{ total_count }}</td>
+        <td class="px-4 py-2 text-right">{{ total_log_v|floatformat:3 }}</td>
+        <td class="px-4 py-2 text-right">{{ total_lumber_v|floatformat:3 }}</td>
+        <td class="px-4 py-2 text-right">{% if total_yield is not None %}{{ total_yield|floatformat:1 }}%{% else %}—{% endif %}</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
 {% else %}
 <p>Inga stockar i detta intervall.</p>
 {% endif %}
-</body>
-</html>
+{% endblock %}
