@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Avkastningsrapport — Logtrack</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 1rem; color: #222; }
+  h1 { margin-top: 0; }
+  form { margin-bottom: 1.5rem; display: flex; gap: .5rem; flex-wrap: wrap; align-items: end; }
+  label { font-size: .85rem; color: #555; display: block; }
+  input[type=date] { padding: .4rem; font-size: 1rem; }
+  button { padding: .5rem 1rem; font-size: 1rem; }
+  table { border-collapse: collapse; width: 100%; max-width: 800px; }
+  th, td { padding: .55rem .75rem; border-bottom: 1px solid #ddd; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  tfoot td { font-weight: 600; border-top: 2px solid #444; border-bottom: none; }
+  a.back { display: inline-block; margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+<a class="back" href="/admin/">&larr; Admin</a>
+<h1>Avkastningsrapport</h1>
+
+<form method="get">
+  <div>
+    <label for="from">Från</label>
+    <input type="date" id="from" name="from" value="{{ date_from }}">
+  </div>
+  <div>
+    <label for="to">Till</label>
+    <input type="date" id="to" name="to" value="{{ date_to }}">
+  </div>
+  <button type="submit">Filtrera</button>
+</form>
+
+{% if total_count %}
+<table>
+  <thead>
+    <tr>
+      <th>Trädslag</th>
+      <th>Stockar</th>
+      <th>Stock m³</th>
+      <th>Virke m³</th>
+      <th>Avkastning %</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.species }}</td>
+      <td>{{ row.count }}</td>
+      <td>{{ row.log_v|floatformat:3 }}</td>
+      <td>{{ row.lumber_v|floatformat:3 }}</td>
+      <td>{% if row.yield_pct is not None %}{{ row.yield_pct|floatformat:1 }}%{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td>Totalt</td>
+      <td>{{ total_count }}</td>
+      <td>{{ total_log_v|floatformat:3 }}</td>
+      <td>{{ total_lumber_v|floatformat:3 }}</td>
+      <td>{% if total_yield is not None %}{{ total_yield|floatformat:1 }}%{% else %}—{% endif %}</td>
+    </tr>
+  </tfoot>
+</table>
+{% else %}
+<p>Inga stockar i detta intervall.</p>
+{% endif %}
+</body>
+</html>
