@@ -43,16 +43,42 @@ class LogAdmin(ModelAdmin):
     autocomplete_fields = ["species"]
     inlines = [LumberInline]
 
+    fieldsets = (
+        (None, {
+            "fields": (
+                "species",
+                ("diameter_cm", "length_cm"),
+                "source",
+                ("received_date", "mill_date"),
+                "notes",
+            ),
+        }),
+        ("Beräknat", {
+            "fields": (
+                "volume_m3_display",
+                "lumber_volume_m3_display",
+                "yield_pct_display",
+            ),
+        }),
+    )
+    readonly_fields = ["volume_m3_display", "lumber_volume_m3_display", "yield_pct_display"]
+
     @admin.display(description="stock m³", ordering="diameter_cm")
     def volume_m3_display(self, obj: Log) -> str:
+        if obj.diameter_cm is None or obj.length_cm is None:
+            return "—"
         return f"{obj.volume_m3:.3f}"
 
     @admin.display(description="virke m³")
     def lumber_volume_m3_display(self, obj: Log) -> str:
+        if obj.pk is None:
+            return "—"
         return f"{obj.lumber_volume_m3:.3f}"
 
     @admin.display(description="avkastning %")
     def yield_pct_display(self, obj: Log) -> str:
+        if obj.pk is None:
+            return "—"
         y = obj.yield_pct
         return f"{y:.1f}%" if y is not None else "—"
 

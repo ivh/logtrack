@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 
+from django.urls import reverse_lazy
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -45,6 +47,22 @@ UNFOLD = {
     'SITE_TITLE': 'Logtrack',
     'SITE_HEADER': 'Logtrack',
     'SITE_SUBHEADER': 'Stockar & virke',
+    'SIDEBAR': {
+        'show_search': False,
+        'show_all_applications': True,
+        'navigation': [
+            {
+                'title': 'Rapporter',
+                'items': [
+                    {
+                        'title': 'Avkastning',
+                        'icon': 'monitoring',
+                        'link': reverse_lazy('mill:yield_report'),
+                    },
+                ],
+            },
+        ],
+    },
 }
 
 MIDDLEWARE = [
