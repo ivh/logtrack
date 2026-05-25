@@ -1,6 +1,7 @@
 import math
 
 from django.db import models
+from django.utils import timezone
 
 
 class Species(models.Model):
@@ -71,6 +72,7 @@ class Lumber(models.Model):
     status = models.CharField(
         "status", max_length=16, choices=Status.choices, default=Status.GREEN
     )
+    status_changed_at = models.DateTimeField("status ändrad", default=timezone.now)
     location = models.CharField("plats", max_length=64, blank=True)
     notes = models.TextField("anteckningar", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -83,6 +85,24 @@ class Lumber(models.Model):
     def __str__(self) -> str:
         return f"{self.count}x {self.thickness_mm}x{self.width_mm}x{self.length_mm}mm"
 
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        instance = super().from_db(db, field_names, values)
+        instance._loaded_status = instance.status
+        return instance
+
+    def save(self, *args, **kwargs):
+        if self.pk and getattr(self, "_loaded_status", None) != self.status:
+            self.status_changed_at = timezone.now()
+        super().save(*args, **kwargs)
+        self._loaded_status = self.status
+
     @property
     def volume_m3(self) -> float:
         return self.thickness_mm * self.width_mm * self.length_mm * self.count / 1e9
+
+    @property
+    def days_in_status(self) -> int | None:
+        if not self.status_changed_at:
+            return None
+        return (timezone.now() - self.status_changed_at).days

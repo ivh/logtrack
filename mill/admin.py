@@ -92,6 +92,7 @@ class LumberAdmin(ModelAdmin):
         "length_mm",
         "count",
         "status",
+        "days_in_status_display",
         "location",
         "volume_m3_display",
     ]
@@ -99,7 +100,13 @@ class LumberAdmin(ModelAdmin):
     list_editable = ["status", "location"]
     search_fields = ["notes", "location"]
     autocomplete_fields = ["log"]
+    readonly_fields = ["status_changed_at"]
 
     @admin.display(description="m³")
     def volume_m3_display(self, obj: Lumber) -> str:
         return f"{obj.volume_m3:.3f}"
+
+    @admin.display(description="dagar", ordering="status_changed_at")
+    def days_in_status_display(self, obj: Lumber) -> str:
+        d = obj.days_in_status
+        return "—" if d is None else str(d)

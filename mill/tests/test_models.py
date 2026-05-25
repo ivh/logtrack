@@ -1,7 +1,8 @@
 import math
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
+from django.utils import timezone
 
 from mill.models import Log, Lumber, Species
 
@@ -76,3 +77,41 @@ def test_log_yield_pct_no_lumber_is_zero(log):
 def test_log_yield_pct_none_when_zero_volume(species):
     log = Log(species=species, diameter_cm=0, length_cm=200, mill_date=date(2026, 5, 1))
     assert log.yield_pct is None
+
+
+def test_lumber_status_changed_at_set_on_create(log):
+    before = timezone.now()
+    lumber = Lumber.objects.create(log=log, thickness_mm=50, width_mm=100, length_mm=2000)
+    assert before <= lumber.status_changed_at <= timezone.now()
+
+
+def test_lumber_status_changed_at_updates_when_status_changes(log):
+    lumber = Lumber.objects.create(log=log, thickness_mm=50, width_mm=100, length_mm=2000)
+    old_ts = timezone.now() - timedelta(days=5)
+    Lumber.objects.filter(pk=lumber.pk).update(status_changed_at=old_ts)
+
+    fresh = Lumber.objects.get(pk=lumber.pk)
+    fresh.status = Lumber.Status.DRYING
+    fresh.save()
+    assert fresh.status_changed_at > old_ts
+
+
+def test_lumber_status_changed_at_stable_when_other_fields_change(log):
+    lumber = Lumber.objects.create(log=log, thickness_mm=50, width_mm=100, length_mm=2000)
+    old_ts = timezone.now() - timedelta(days=5)
+    Lumber.objects.filter(pk=lumber.pk).update(status_changed_at=old_ts)
+
+    fresh = Lumber.objects.get(pk=lumber.pk)
+    fresh.location = "skjul"
+    fresh.save()
+    # status didn't change, so timestamp should be unchanged
+    assert abs((fresh.status_changed_at - old_ts).total_seconds()) < 1
+
+
+def test_lumber_days_in_status(log):
+    lumber = Lumber.objects.create(log=log, thickness_mm=50, width_mm=100, length_mm=2000)
+    Lumber.objects.filter(pk=lumber.pk).update(
+        status_changed_at=timezone.now() - timedelta(days=7, hours=2)
+    )
+    fresh = Lumber.objects.get(pk=lumber.pk)
+    assert fresh.days_in_status == 7
