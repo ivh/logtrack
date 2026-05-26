@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from django.contrib.auth.models import User
@@ -68,3 +69,21 @@ def test_yield_report_date_filter(staff_client, species):
         reverse("mill:yield_report") + "?from=2026-05-01&to=2026-05-31"
     )
     assert resp.context["total_count"] == 1
+
+
+def test_yield_report_revenue_sums_only_sold(staff_client, species):
+    today = date(2026, 5, 1)
+    log = _log(species["tall"], 20, 200, today)
+    Lumber.objects.create(
+        log=log, thickness_mm=50, width_mm=100, length_mm=2000, count=4,
+        unit_price_sek=Decimal("100.00"),
+    )
+    Lumber.objects.create(
+        log=log, thickness_mm=25, width_mm=100, length_mm=2000, count=2,
+        unit_price_sek=None,
+    )
+
+    resp = staff_client.get(reverse("mill:yield_report"))
+    rows = {r["species"]: r for r in resp.context["rows"]}
+    assert rows["Tall"]["revenue"] == Decimal("400.00")
+    assert resp.context["total_revenue"] == Decimal("400.00")

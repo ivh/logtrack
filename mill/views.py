@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 
 from django.contrib import admin
 from django.contrib.admin.views.decorators import staff_member_required
@@ -30,14 +31,22 @@ def yield_report(request):
     by_species: dict[str, dict] = {}
     total_log_v = 0.0
     total_lumber_v = 0.0
+    total_revenue = Decimal("0")
     total_count = 0
 
     for log in logs:
         key = log.species.name
-        row = by_species.setdefault(key, {"species": key, "count": 0, "log_v": 0.0, "lumber_v": 0.0})
+        row = by_species.setdefault(
+            key,
+            {"species": key, "count": 0, "log_v": 0.0, "lumber_v": 0.0, "revenue": Decimal("0")},
+        )
         row["count"] += 1
         row["log_v"] += log.volume_m3
         row["lumber_v"] += log.lumber_volume_m3
+        for lumber in log.lumber.all():
+            if lumber.unit_price_sek is not None:
+                row["revenue"] += lumber.revenue_sek
+                total_revenue += lumber.revenue_sek
         total_count += 1
         total_log_v += log.volume_m3
         total_lumber_v += log.lumber_volume_m3
@@ -59,6 +68,7 @@ def yield_report(request):
             "total_count": total_count,
             "total_log_v": total_log_v,
             "total_lumber_v": total_lumber_v,
+            "total_revenue": total_revenue,
             "total_yield": total_yield,
             "date_from": date_from.isoformat() if date_from else "",
             "date_to": date_to.isoformat() if date_to else "",

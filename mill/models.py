@@ -1,5 +1,7 @@
 import math
+from decimal import ROUND_HALF_UP, Decimal
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -60,7 +62,6 @@ class Lumber(models.Model):
         GREEN = "green", "färskt"
         DRYING = "drying", "torkar"
         DRY = "dry", "torrt"
-        SOLD = "sold", "sålt / borta"
 
     log = models.ForeignKey(
         Log, on_delete=models.CASCADE, related_name="lumber", verbose_name="stock"
@@ -75,6 +76,11 @@ class Lumber(models.Model):
     status_changed_at = models.DateTimeField("status ändrad", default=timezone.now)
     location = models.CharField("plats", max_length=64, blank=True)
     notes = models.TextField("anteckningar", blank=True)
+    unit_price_sek = models.DecimalField(
+        "pris per styck (ex moms)", max_digits=10, decimal_places=2, null=True, blank=True
+    )
+    bokio_invoice_id = models.CharField("Bokio-faktura-id", max_length=64, blank=True)
+    bokio_line_item_id = models.CharField("Bokio-radobjekt-id", max_length=64, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -106,3 +112,30 @@ class Lumber(models.Model):
         if not self.status_changed_at:
             return None
         return (timezone.now() - self.status_changed_at).days
+
+    @property
+    def suggested_price_sek(self) -> Decimal:
+        base_price = settings.LUMBER_BASE_PRICE_SEK_PER_M
+        base_w = settings.LUMBER_BASE_DIM_W_MM
+        base_t = settings.LUMBER_BASE_DIM_T_MM
+        vat = settings.LUMBER_VAT_RATE
+        inc_vat = (
+            base_price
+            * Decimal(self.thickness_mm)
+            * Decimal(self.width_mm)
+            / Decimal(base_w * base_t)
+            * Decimal(self.length_mm)
+            / Decimal(1000)
+        )
+        ex_vat = inc_vat / (Decimal(1) + vat)
+        return ex_vat.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    @property
+    def is_sold(self) -> bool:
+        return self.unit_price_sek is not None
+
+    @property
+    def revenue_sek(self) -> Decimal | None:
+        if self.unit_price_sek is None:
+            return None
+        return (self.unit_price_sek * self.count).quantize(Decimal("0.01"))

@@ -1,5 +1,6 @@
 import math
 from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
 from django.utils import timezone
@@ -115,3 +116,35 @@ def test_lumber_days_in_status(log):
     )
     fresh = Lumber.objects.get(pk=lumber.pk)
     assert fresh.days_in_status == 7
+
+
+def test_lumber_status_sold_no_longer_exists():
+    assert "sold" not in {v for v, _ in Lumber.Status.choices}
+
+
+def test_suggested_price_sek_ex_vat_at_base_dim(log):
+    # 45×95×1000 mm at base dim → 46 SEK inc VAT per metre; ex VAT = 46/1.25 = 36.80
+    lumber = Lumber(log=log, thickness_mm=45, width_mm=95, length_mm=1000, count=1)
+    assert lumber.suggested_price_sek == Decimal("36.80")
+
+
+def test_suggested_price_sek_scales_with_dim_and_length(log):
+    # 50×100×3000 mm — inc VAT = 46/(45*95) * 50*100*3 ≈ 161.40 → ex VAT ≈ 129.12
+    lumber = Lumber(log=log, thickness_mm=50, width_mm=100, length_mm=3000, count=1)
+    expected = (Decimal("46.00") * Decimal(50) * Decimal(100) / Decimal(45 * 95) * Decimal(3)) / Decimal("1.25")
+    assert lumber.suggested_price_sek == expected.quantize(Decimal("0.01"))
+
+
+def test_is_sold_false_when_no_price(log):
+    lumber = Lumber.objects.create(log=log, thickness_mm=50, width_mm=100, length_mm=2000)
+    assert lumber.is_sold is False
+    assert lumber.revenue_sek is None
+
+
+def test_is_sold_true_and_revenue_when_price_set(log):
+    lumber = Lumber.objects.create(
+        log=log, thickness_mm=50, width_mm=100, length_mm=2000, count=4,
+        unit_price_sek=Decimal("125.50"),
+    )
+    assert lumber.is_sold is True
+    assert lumber.revenue_sek == Decimal("502.00")

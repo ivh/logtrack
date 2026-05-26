@@ -42,6 +42,7 @@
         <th class="px-4 py-2 text-right">Stock m³</th>
         <th class="px-4 py-2 text-right">Virke m³</th>
         <th class="px-4 py-2 text-right">Avkastning %</th>
+        <th class="px-4 py-2 text-right">Intäkt (SEK)</th>
       </tr>
     </thead>
     <tbody>
@@ -52,6 +53,7 @@
         <td class="px-4 py-2 text-right">{{ row.log_v|floatformat:3 }}</td>
         <td class="px-4 py-2 text-right">{{ row.lumber_v|floatformat:3 }}</td>
         <td class="px-4 py-2 text-right">{% if row.yield_pct is not None %}{{ row.yield_pct|floatformat:1 }}%{% else %}—{% endif %}</td>
+        <td class="px-4 py-2 text-right">{{ row.revenue|floatformat:2 }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -62,6 +64,7 @@
         <td class="px-4 py-2 text-right">{{ total_log_v|floatformat:3 }}</td>
         <td class="px-4 py-2 text-right">{{ total_lumber_v|floatformat:3 }}</td>
         <td class="px-4 py-2 text-right">{% if total_yield is not None %}{{ total_yield|floatformat:1 }}%{% else %}—{% endif %}</td>
+        <td class="px-4 py-2 text-right">{{ total_revenue|floatformat:2 }}</td>
       </tr>
     </tfoot>
   </table>

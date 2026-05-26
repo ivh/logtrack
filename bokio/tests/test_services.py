@@ -1,0 +1,87 @@
+from datetime import date
+from decimal import Decimal
+from unittest.mock import patch
+
+import pytest
+
+from bokio.exceptions import BokioAuthError
+from bokio.services import create_draft_for_lumber, push_lumber_to_invoice
+from mill.models import Log, Lumber, Species
+
+
+@pytest.fixture
+def lumber(db):
+    sp = Species.objects.create(name="Tall")
+    log = Log.objects.create(species=sp, diameter_cm=20, length_cm=300, mill_date=date(2026, 5, 1))
+    return Lumber.objects.create(
+        log=log, thickness_mm=50, width_mm=100, length_mm=3000, count=4,
+        unit_price_sek=Decimal("160.00"),
+    )
+
+
+def test_push_refuses_unsold(lumber):
+    lumber.unit_price_sek = None
+    lumber.save()
+    with pytest.raises(ValueError, match="osålt"):
+        push_lumber_to_invoice(lumber, "inv-1")
+
+
+def test_push_maps_fields_and_persists_ids(lumber):
+    with patch("bokio.services.get_client") as gc:
+        gc.return_value.add_line_item.return_value = {"id": "li-1"}
+        line_item_id = push_lumber_to_invoice(lumber, "inv-1")
+
+    gc.return_value.add_line_item.assert_called_once()
+    invoice_id, payload = gc.return_value.add_line_item.call_args.args
+    assert invoice_id == "inv-1"
+    assert payload["quantity"] == 4
+    assert payload["unitPrice"] == 160.00
+    assert "50×100×3000mm" in payload["description"]
+    assert "Tall" in payload["description"]
+
+    assert line_item_id == "li-1"
+    lumber.refresh_from_db()
+    assert lumber.bokio_invoice_id == "inv-1"
+    assert lumber.bokio_line_item_id == "li-1"
+
+
+def test_push_propagates_client_error(lumber):
+    with patch("bokio.services.get_client") as gc:
+        gc.return_value.add_line_item.side_effect = BokioAuthError("nope")
+        with pytest.raises(BokioAuthError):
+            push_lumber_to_invoice(lumber, "inv-1")
+    lumber.refresh_from_db()
+    assert lumber.bokio_invoice_id == ""
+    assert lumber.bokio_line_item_id == ""
+
+
+def test_create_draft_refuses_unsold(lumber):
+    lumber.unit_price_sek = None
+    lumber.save()
+    with pytest.raises(ValueError, match="osålt"):
+        create_draft_for_lumber(lumber)
+
+
+def test_create_draft_payload_and_persists_ids(lumber):
+    with patch("bokio.services.get_client") as gc:
+        # Bokio returns line-item id as a number on draft creation
+        gc.return_value.create_draft_invoice.return_value = {
+            "id": "inv-new",
+            "lineItems": [{"id": 12345}],
+        }
+        invoice_id, line_item_id = create_draft_for_lumber(lumber)
+
+    payload = gc.return_value.create_draft_invoice.call_args.args[0]
+    assert "invoiceDate" in payload
+    assert len(payload["lineItems"]) == 1
+    line = payload["lineItems"][0]
+    assert line["quantity"] == 4
+    assert line["unitPrice"] == 160.00
+    assert line["taxRate"] == 25
+    assert line["itemType"] == "salesItem"
+
+    assert invoice_id == "inv-new"
+    assert line_item_id == "12345"
+    lumber.refresh_from_db()
+    assert lumber.bokio_invoice_id == "inv-new"
+    assert lumber.bokio_line_item_id == "12345"

@@ -10,12 +10,24 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
+from decimal import Decimal
 from pathlib import Path
 
 from django.urls import reverse_lazy
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load .env if present (tiny inline loader; no python-dotenv dep)
+_env_file = BASE_DIR / '.env'
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if not _line or _line.startswith('#') or '=' not in _line:
+            continue
+        _k, _, _v = _line.partition('=')
+        os.environ.setdefault(_k.strip(), _v.strip())
 
 
 # Quick-start development settings - unsuitable for production
@@ -41,6 +53,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'mill',
+    'bokio',
 ]
 
 UNFOLD = {
@@ -156,3 +169,19 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+
+# --- Lumber pricing (suggested-price formula; user can override per row) ---
+# Base price is the customer-facing per-meter price for LUMBER_BASE_DIM,
+# *including* 25% VAT. suggested_price_sek divides by (1 + LUMBER_VAT_RATE)
+# so the stored price is ex VAT (what Bokio expects on line items).
+LUMBER_BASE_PRICE_SEK_PER_M = Decimal('46.00')
+LUMBER_BASE_DIM_W_MM = 95
+LUMBER_BASE_DIM_T_MM = 45
+LUMBER_VAT_RATE = Decimal('0.25')
+
+
+# --- Bokio API ---
+BOKIO_TOKEN = os.environ.get('BOKIO_TOKEN', '')
+BOKIO_COMPANY_ID = os.environ.get('BOKIO_COMPANY_ID', '')
+BOKIO_API_BASE = os.environ.get('BOKIO_API_BASE', 'https://api.bokio.se/v1')
