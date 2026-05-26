@@ -45,9 +45,10 @@ class LogAdmin(ModelAdmin):
         "volume_m3_display",
         "lumber_volume_m3_display",
         "yield_pct_display",
+        "fresh_blade_mounted",
         "source",
     ]
-    list_filter = ["species", "mill_date", "source"]
+    list_filter = ["species", "mill_date", "source", "fresh_blade_mounted"]
     search_fields = ["notes", "source"]
     date_hierarchy = "mill_date"
     autocomplete_fields = ["species"]
@@ -60,6 +61,7 @@ class LogAdmin(ModelAdmin):
                 ("diameter_cm", "length_cm"),
                 "source",
                 ("received_date", "mill_date"),
+                "fresh_blade_mounted",
                 "notes",
             ),
         }),

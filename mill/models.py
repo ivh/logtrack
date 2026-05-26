@@ -28,6 +28,11 @@ class Log(models.Model):
     source = models.CharField("ursprung", max_length=128, blank=True)
     received_date = models.DateField("mottaget", null=True, blank=True)
     mill_date = models.DateField("sågdatum")
+    fresh_blade_mounted = models.BooleanField(
+        "ny klinga monterad",
+        default=False,
+        help_text="Markera den första stocken som sågades med en nymonterad klinga.",
+    )
     notes = models.TextField("anteckningar", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

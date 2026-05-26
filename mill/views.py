@@ -78,3 +78,60 @@ def yield_report(request):
             "date_to": date_to.isoformat() if date_to else "",
         },
     )
+
+
+@staff_member_required
+def blade_sessions(request):
+    """Group logs into blade sessions by walking mill_date order.
+
+    A session starts at a Log with fresh_blade_mounted=True and runs until
+    the next such marker (exclusive). Logs before the first marker are
+    grouped as 'okänd' (unattributed)."""
+    logs = list(
+        Log.objects.order_by("mill_date", "id")
+    )
+
+    sessions: list[dict] = []
+    current: dict | None = None
+    marked_count = 0
+    for log in logs:
+        if log.fresh_blade_mounted or current is None:
+            if log.fresh_blade_mounted:
+                marked_count += 1
+                label = f"#{marked_count}"
+            else:
+                label = "okänd"
+            current = {
+                "label": label,
+                "started": log.mill_date,
+                "ended": log.mill_date,
+                "logs": 0,
+                "volume_m3": 0.0,
+            }
+            sessions.append(current)
+        current["ended"] = log.mill_date
+        current["logs"] += 1
+        v = log.volume_m3
+        if v is not None:
+            current["volume_m3"] += v
+
+    # mark the last session as open if its end matches the latest mill_date
+    # and its label isn't 'okänd' (a marked session)
+    if sessions and sessions[-1]["label"] != "okänd":
+        sessions[-1]["open"] = True
+
+    for s in sessions:
+        days = (s["ended"] - s["started"]).days + 1 if s["logs"] else 0
+        s["days"] = days
+
+    sessions.reverse()  # most recent first
+
+    return render(
+        request,
+        "mill/blade_sessions.html",
+        {
+            **admin.site.each_context(request),
+            "title": "Klingobyten",
+            "sessions": sessions,
+        },
+    )

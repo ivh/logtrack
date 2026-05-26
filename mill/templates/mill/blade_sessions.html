@@ -1,0 +1,56 @@
+{% extends "admin/base_site.html" %}
+
+{% block title %}Klingobyten{% endblock %}
+
+{% block breadcrumbs %}
+<div class="px-4 lg:px-8">
+  <div class="container mx-auto -my-3">
+    <div class="flex items-center text-sm gap-2 text-font-subtle-light dark:text-font-subtle-dark py-3">
+      <a href="{% url 'admin:index' %}" class="hover:underline">Hem</a>
+      <span>/</span>
+      <span>Klingobyten</span>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<p class="text-sm text-font-subtle-light dark:text-font-subtle-dark mb-4">
+  En klingsession börjar på den stock du markerar med "ny klinga monterad" och
+  slutar vid nästa sådan markering. Stockar före första markeringen visas som
+  "okänd".
+</p>
+
+{% if sessions %}
+<div class="overflow-x-auto border border-base-200 dark:border-base-700 rounded-md">
+  <table class="w-full text-sm">
+    <thead class="bg-base-50 dark:bg-base-800">
+      <tr class="text-left">
+        <th class="px-4 py-2">Session</th>
+        <th class="px-4 py-2">Från</th>
+        <th class="px-4 py-2">Till</th>
+        <th class="px-4 py-2 text-right">Dagar</th>
+        <th class="px-4 py-2 text-right">Stockar</th>
+        <th class="px-4 py-2 text-right">m³ sågat</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr class="border-t border-base-200 dark:border-base-700">
+        <td class="px-4 py-2">
+          {{ s.label }}{% if s.open %} <em class="text-xs">(pågående)</em>{% endif %}
+        </td>
+        <td class="px-4 py-2">{{ s.started|date:"Y-m-d" }}</td>
+        <td class="px-4 py-2">{{ s.ended|date:"Y-m-d" }}</td>
+        <td class="px-4 py-2 text-right">{{ s.days }}</td>
+        <td class="px-4 py-2 text-right">{{ s.logs }}</td>
+        <td class="px-4 py-2 text-right">{{ s.volume_m3|floatformat:3 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p>Inga stockar registrerade än.</p>
+{% endif %}
+{% endblock %}

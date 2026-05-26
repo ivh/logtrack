@@ -87,6 +87,11 @@ UNFOLD = {
                         'icon': 'monitoring',
                         'link': reverse_lazy('mill:yield_report'),
                     },
+                    {
+                        'title': 'Klingobyten',
+                        'icon': 'content_cut',
+                        'link': reverse_lazy('mill:blade_sessions'),
+                    },
                 ],
             },
         ],
