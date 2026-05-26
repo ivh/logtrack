@@ -80,6 +80,17 @@ def test_log_yield_pct_none_when_zero_volume(species):
     assert log.yield_pct is None
 
 
+def test_log_volume_m3_none_when_diameter_missing(species):
+    log = Log(species=species, diameter_cm=None, length_cm=200, mill_date=date(2026, 5, 1))
+    assert log.volume_m3 is None
+
+
+def test_log_yield_pct_none_when_diameter_missing(db, species):
+    log = Log.objects.create(species=species, diameter_cm=None, length_cm=200, mill_date=date(2026, 5, 1))
+    Lumber.objects.create(log=log, thickness_mm=50, width_mm=100, length_mm=2000, count=2)
+    assert log.yield_pct is None
+
+
 def test_lumber_status_changed_at_set_on_create(log):
     before = timezone.now()
     lumber = Lumber.objects.create(log=log, thickness_mm=50, width_mm=100, length_mm=2000)

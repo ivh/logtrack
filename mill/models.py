@@ -23,7 +23,7 @@ class Log(models.Model):
     species = models.ForeignKey(
         Species, on_delete=models.PROTECT, related_name="logs", verbose_name="trädslag"
     )
-    diameter_cm = models.PositiveSmallIntegerField("toppdiameter (cm)")
+    diameter_cm = models.PositiveSmallIntegerField("toppdiameter (cm)", null=True, blank=True)
     length_cm = models.PositiveSmallIntegerField("längd (cm)")
     source = models.CharField("ursprung", max_length=128, blank=True)
     received_date = models.DateField("mottaget", null=True, blank=True)
@@ -40,7 +40,9 @@ class Log(models.Model):
         return f"#{self.pk} {self.species} {self.diameter_cm}x{self.length_cm}cm"
 
     @property
-    def volume_m3(self) -> float:
+    def volume_m3(self) -> float | None:
+        if self.diameter_cm is None or self.length_cm is None:
+            return None
         r_m = self.diameter_cm / 200
         l_m = self.length_cm / 100
         return math.pi * r_m * r_m * l_m
@@ -52,7 +54,7 @@ class Log(models.Model):
     @property
     def yield_pct(self) -> float | None:
         v = self.volume_m3
-        if v <= 0:
+        if v is None or v <= 0:
             return None
         return self.lumber_volume_m3 / v * 100
 

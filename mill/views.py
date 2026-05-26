@@ -41,15 +41,19 @@ def yield_report(request):
             {"species": key, "count": 0, "log_v": 0.0, "lumber_v": 0.0, "revenue": Decimal("0")},
         )
         row["count"] += 1
-        row["log_v"] += log.volume_m3
-        row["lumber_v"] += log.lumber_volume_m3
+        total_count += 1
+        log_v = log.volume_m3
+        if log_v is not None:
+            log_lumber_v = log.lumber_volume_m3
+            row["log_v"] += log_v
+            row["lumber_v"] += log_lumber_v
+            total_log_v += log_v
+            total_lumber_v += log_lumber_v
+        # Revenue is independent of measurement — every sold board counts.
         for lumber in log.lumber.all():
             if lumber.unit_price_sek is not None:
                 row["revenue"] += lumber.revenue_sek
                 total_revenue += lumber.revenue_sek
-        total_count += 1
-        total_log_v += log.volume_m3
-        total_lumber_v += log.lumber_volume_m3
 
     rows = []
     for row in sorted(by_species.values(), key=lambda r: r["species"]):

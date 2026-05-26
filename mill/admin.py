@@ -75,9 +75,8 @@ class LogAdmin(ModelAdmin):
 
     @admin.display(description="stock m³", ordering="diameter_cm")
     def volume_m3_display(self, obj: Log) -> str:
-        if obj.diameter_cm is None or obj.length_cm is None:
-            return "—"
-        return f"{obj.volume_m3:.3f}"
+        v = obj.volume_m3
+        return "—" if v is None else f"{v:.3f}"
 
     @admin.display(description="virke m³")
     def lumber_volume_m3_display(self, obj: Log) -> str:
