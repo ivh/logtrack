@@ -1,6 +1,7 @@
 from decimal import ROUND_HALF_UP, Decimal
 
 from django import forms
+from django.conf import settings
 from django.contrib import admin, messages
 from django.http import HttpResponseRedirect
 from django.urls import path, reverse
@@ -16,6 +17,13 @@ from .models import Log, Lumber, Species
 
 
 BTN_CLS = "bg-primary-600 hover:bg-primary-700 text-white rounded-md px-3 py-2 text-sm font-medium inline-block"
+
+
+def _bokio_invoice_url(invoice_id: str) -> str:
+    company = settings.BOKIO_COMPANY_ID
+    if not invoice_id or not company:
+        return ""
+    return f"https://app.bokio.se/{company}/invoicing/invoices/view/{invoice_id}"
 
 
 @admin.register(Species)
@@ -187,7 +195,7 @@ class LumberAdmin(ModelAdmin):
             "fields": (
                 ("unit_price_sek", "suggested_price_sek_display"),
                 "total_price_sek",
-                "bokio_invoice_id",
+                ("bokio_invoice_id", "bokio_invoice_link"),
                 "create_bokio_draft_button",
                 "push_to_bokio_button",
                 "bokio_line_item_id",
@@ -197,6 +205,7 @@ class LumberAdmin(ModelAdmin):
     readonly_fields = [
         "status_changed_at",
         "suggested_price_sek_display",
+        "bokio_invoice_link",
         "create_bokio_draft_button",
         "push_to_bokio_button",
         "bokio_line_item_id",
@@ -241,8 +250,16 @@ class LumberAdmin(ModelAdmin):
         return "—" if r is None else f"{r}"
 
     @admin.display(description="Bokio")
-    def bokio_invoice_id_short(self, obj: Lumber) -> str:
-        return obj.bokio_invoice_id[:8] if obj.bokio_invoice_id else "—"
+    def bokio_invoice_id_short(self, obj: Lumber) -> SafeString:
+        if not obj.bokio_invoice_id:
+            return mark_safe("—")
+        short = obj.bokio_invoice_id[:8]
+        url = _bokio_invoice_url(obj.bokio_invoice_id)
+        if not url:
+            return format_html("{}", short)
+        return format_html(
+            '<a href="{}" target="_blank" rel="noopener">{}</a>', url, short
+        )
 
     # ---- Detail-view readonly displays -------------------------------------
 
@@ -255,6 +272,18 @@ class LumberAdmin(ModelAdmin):
             '<span class="mr-3">{} SEK</span>'
             '<a href="{}" class="{}">Använd</a>',
             obj.suggested_price_sek, url, BTN_CLS,
+        )
+
+    @admin.display(description="")
+    def bokio_invoice_link(self, obj: Lumber) -> SafeString:
+        if obj.pk is None or not obj.bokio_invoice_id:
+            return mark_safe("—")
+        url = _bokio_invoice_url(obj.bokio_invoice_id)
+        if not url:
+            return mark_safe("—")
+        return format_html(
+            '<a href="{}" target="_blank" rel="noopener" class="{}">Öppna i Bokio</a>',
+            url, BTN_CLS,
         )
 
     @admin.display(description="")
