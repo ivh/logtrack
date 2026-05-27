@@ -1,9 +1,13 @@
+from decimal import ROUND_HALF_UP, Decimal
+
+from django import forms
 from django.contrib import admin, messages
 from django.http import HttpResponseRedirect
 from django.urls import path, reverse
 from django.utils.html import format_html
 from django.utils.safestring import SafeString, mark_safe
 from unfold.admin import ModelAdmin, TabularInline
+from unfold.widgets import UnfoldAdminDecimalFieldWidget
 
 from bokio.exceptions import BokioError
 from bokio.services import create_draft_for_lumber, push_lumber_to_invoice
@@ -94,6 +98,41 @@ class LogAdmin(ModelAdmin):
         return f"{y:.1f}%" if y is not None else "—"
 
 
+class LumberAdminForm(forms.ModelForm):
+    total_price_sek = forms.DecimalField(
+        label="Totalt (ex moms)",
+        required=False,
+        max_digits=12,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget(),
+        help_text="Fyll i totalpris om du föredrar att räkna baklänges. "
+                  "Vid spar: om du ändrar detta fält räknas pris/styck om.",
+    )
+
+    class Meta:
+        model = Lumber
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        inst = getattr(self, "instance", None)
+        if inst is not None and inst.pk and inst.revenue_sek is not None:
+            self.fields["total_price_sek"].initial = inst.revenue_sek
+
+    def clean(self):
+        cleaned = super().clean()
+        if "total_price_sek" in self.changed_data:
+            total = cleaned.get("total_price_sek")
+            count = cleaned.get("count") or 1
+            if total is None:
+                cleaned["unit_price_sek"] = None
+            elif count > 0:
+                cleaned["unit_price_sek"] = (
+                    Decimal(total) / Decimal(count)
+                ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return cleaned
+
+
 class SoldFilter(admin.SimpleListFilter):
     title = "sålt?"
     parameter_name = "is_sold"
@@ -111,6 +150,7 @@ class SoldFilter(admin.SimpleListFilter):
 
 @admin.register(Lumber)
 class LumberAdmin(ModelAdmin):
+    form = LumberAdminForm
     list_display = [
         "log",
         "thickness_mm",
@@ -145,9 +185,8 @@ class LumberAdmin(ModelAdmin):
         }),
         ("Pris & försäljning", {
             "fields": (
-                "unit_price_sek",
-                "suggested_price_sek_display",
-                "use_suggested_price_button",
+                ("unit_price_sek", "suggested_price_sek_display"),
+                "total_price_sek",
                 "bokio_invoice_id",
                 "create_bokio_draft_button",
                 "push_to_bokio_button",
@@ -158,7 +197,6 @@ class LumberAdmin(ModelAdmin):
     readonly_fields = [
         "status_changed_at",
         "suggested_price_sek_display",
-        "use_suggested_price_button",
         "create_bokio_draft_button",
         "push_to_bokio_button",
         "bokio_line_item_id",
@@ -209,17 +247,15 @@ class LumberAdmin(ModelAdmin):
     # ---- Detail-view readonly displays -------------------------------------
 
     @admin.display(description="Föreslaget pris (ex moms)")
-    def suggested_price_sek_display(self, obj: Lumber) -> str:
+    def suggested_price_sek_display(self, obj: Lumber) -> SafeString:
         if obj.pk is None or obj.thickness_mm is None or obj.width_mm is None or obj.length_mm is None:
-            return "—"
-        return f"{obj.suggested_price_sek} SEK"
-
-    @admin.display(description="")
-    def use_suggested_price_button(self, obj: Lumber) -> SafeString:
-        if obj.pk is None:
             return mark_safe("—")
         url = reverse("admin:mill_lumber_use_suggested_price", args=[obj.pk])
-        return format_html('<a href="{}" class="{}">Använd föreslaget pris</a>', url, BTN_CLS)
+        return format_html(
+            '<span class="mr-3">{} SEK</span>'
+            '<a href="{}" class="{}">Använd</a>',
+            obj.suggested_price_sek, url, BTN_CLS,
+        )
 
     @admin.display(description="")
     def create_bokio_draft_button(self, obj: Lumber) -> SafeString:
