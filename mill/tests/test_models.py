@@ -103,7 +103,7 @@ def test_lumber_status_changed_at_updates_when_status_changes(log):
     Lumber.objects.filter(pk=lumber.pk).update(status_changed_at=old_ts)
 
     fresh = Lumber.objects.get(pk=lumber.pk)
-    fresh.status = Lumber.Status.DRYING
+    fresh.status = Lumber.Status.DRY
     fresh.save()
     assert fresh.status_changed_at > old_ts
 

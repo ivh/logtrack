@@ -71,7 +71,7 @@ def test_yield_report_date_filter(staff_client, species):
     assert resp.context["total_count"] == 1
 
 
-def test_yield_report_excludes_unmeasured_logs_from_volume_and_yield(staff_client, species):
+def test_yield_report_lumber_v_shows_all_yield_calc_uses_measured_only(staff_client, species):
     today = date(2026, 5, 1)
     measured = Log.objects.create(species=species["tall"], diameter_cm=20, length_cm=200, mill_date=today)
     unmeasured = Log.objects.create(species=species["tall"], diameter_cm=None, length_cm=200, mill_date=today)
@@ -80,14 +80,26 @@ def test_yield_report_excludes_unmeasured_logs_from_volume_and_yield(staff_clien
 
     resp = staff_client.get(reverse("mill:yield_report"))
     ctx = resp.context
-    # both logs still counted in the Stockar column
     assert ctx["total_count"] == 2
     row = next(r for r in ctx["rows"] if r["species"] == "Tall")
-    # only the measured log contributes to log_v AND lumber_v (apples-to-apples)
+    # column shows ALL lumber: 0.020 + 0.040 = 0.060
+    assert row["lumber_v"] == pytest.approx(0.060)
+    # log_v from measured only
     assert row["log_v"] == pytest.approx(0.02 * 3.141592653589793)
-    assert row["lumber_v"] == pytest.approx(0.020)
-    # yield ratio reflects the measured-only pair
+    # yield uses lumber from measured logs only (0.020), divided by log_v
     assert row["yield_pct"] == pytest.approx(0.020 / (0.02 * 3.141592653589793) * 100)
+
+
+def test_yield_report_lumber_v_shows_all_even_with_no_measured_logs(staff_client, species):
+    today = date(2026, 5, 1)
+    unmeasured = Log.objects.create(species=species["tall"], diameter_cm=None, length_cm=200, mill_date=today)
+    Lumber.objects.create(log=unmeasured, thickness_mm=50, width_mm=100, length_mm=2000, count=3)
+
+    resp = staff_client.get(reverse("mill:yield_report"))
+    row = next(r for r in resp.context["rows"] if r["species"] == "Tall")
+    assert row["lumber_v"] == pytest.approx(0.030)
+    assert row["log_v"] == 0.0
+    assert row["yield_pct"] is None
 
 
 def test_yield_report_revenue_sums_only_sold(staff_client, species):

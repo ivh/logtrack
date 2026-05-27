@@ -31,6 +31,7 @@ def yield_report(request):
     by_species: dict[str, dict] = {}
     total_log_v = 0.0
     total_lumber_v = 0.0
+    total_lumber_v_yield = 0.0  # only from measured logs; feeds the yield calc
     total_revenue = Decimal("0")
     total_count = 0
 
@@ -38,17 +39,23 @@ def yield_report(request):
         key = log.species.name
         row = by_species.setdefault(
             key,
-            {"species": key, "count": 0, "log_v": 0.0, "lumber_v": 0.0, "revenue": Decimal("0")},
+            {
+                "species": key, "count": 0,
+                "log_v": 0.0, "lumber_v": 0.0, "lumber_v_yield": 0.0,
+                "revenue": Decimal("0"),
+            },
         )
         row["count"] += 1
         total_count += 1
+        log_lumber_v = log.lumber_volume_m3
+        row["lumber_v"] += log_lumber_v
+        total_lumber_v += log_lumber_v
         log_v = log.volume_m3
         if log_v is not None:
-            log_lumber_v = log.lumber_volume_m3
             row["log_v"] += log_v
-            row["lumber_v"] += log_lumber_v
+            row["lumber_v_yield"] += log_lumber_v
             total_log_v += log_v
-            total_lumber_v += log_lumber_v
+            total_lumber_v_yield += log_lumber_v
         # Revenue is independent of measurement — every sold board counts.
         for lumber in log.lumber.all():
             if lumber.unit_price_sek is not None:
@@ -57,10 +64,10 @@ def yield_report(request):
 
     rows = []
     for row in sorted(by_species.values(), key=lambda r: r["species"]):
-        yield_pct = (row["lumber_v"] / row["log_v"] * 100) if row["log_v"] > 0 else None
+        yield_pct = (row["lumber_v_yield"] / row["log_v"] * 100) if row["log_v"] > 0 else None
         rows.append({**row, "yield_pct": yield_pct})
 
-    total_yield = (total_lumber_v / total_log_v * 100) if total_log_v > 0 else None
+    total_yield = (total_lumber_v_yield / total_log_v * 100) if total_log_v > 0 else None
 
     return render(
         request,

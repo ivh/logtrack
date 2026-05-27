@@ -33,9 +33,11 @@ logtrack/ — Django project (settings, urls)
   computed on the fly from the boolean by walking logs in mill_date order
   (see `mill.views.blade_sessions`).
 - **`Lumber`** — batch of identical boards from one `Log`. FK to Log.
-  - `status`: `green` / `drying` / `dry`. **No `sold` status** — sold-ness is
-    "has a price". `status_changed_at` updated by `save()` when status flips
-    (uses `from_db` to remember the loaded value).
+  - `status`: `green` / `dry` / `picked_up` / `delivered` / `used_farm` /
+    `used_private`. **No `sold` status** — sold-ness is "has a price"
+    (the post-sale statuses just say where it physically went).
+    `status_changed_at` updated by `save()` when status flips (uses
+    `from_db` to remember the loaded value).
   - `unit_price_sek` — **ex VAT**, nullable. `None` ⇒ not sold. Setting it is
     the act of marking the batch sold. Only sold lumber feeds revenue stats.
   - `bokio_invoice_id`, `bokio_line_item_id` — strings; set by the push/create
@@ -106,9 +108,12 @@ Workflow:
 - `/yield/` — staff-only view aggregated by species, with date range filter.
 - Extends `admin/base_site.html` and gets `admin.site.each_context(request)`
   so the Unfold chrome wraps it.
-- Unmeasured logs (no diameter): counted in "Stockar", but their volume and
-  their lumber are excluded from the Stock m³ / Virke m³ / Avkastning %
-  columns (apples-to-apples). Revenue is independent of measurement.
+- Unmeasured logs (no diameter): counted in "Stockar". Their volume is
+  excluded from "Stock m³" and from the **Avkastning %** numerator/denominator
+  (apples-to-apples). **"Virke m³" shows all lumber** including from
+  unmeasured logs, so the column reflects real inventory; this means
+  `lumber_v ≠ yield_numerator` when there's a mix. Revenue is also
+  independent of measurement.
 
 ## Blade sessions report
 

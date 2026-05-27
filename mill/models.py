@@ -67,8 +67,11 @@ class Log(models.Model):
 class Lumber(models.Model):
     class Status(models.TextChoices):
         GREEN = "green", "färskt"
-        DRYING = "drying", "torkar"
         DRY = "dry", "torrt"
+        PICKED_UP = "picked_up", "hämtat"
+        DELIVERED = "delivered", "levererad"
+        USED_FARM = "used_farm", "använt gården"
+        USED_PRIVATE = "used_private", "använt privat"
 
     log = models.ForeignKey(
         Log, on_delete=models.CASCADE, related_name="lumber", verbose_name="stock"
