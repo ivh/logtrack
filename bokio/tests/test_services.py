@@ -8,6 +8,7 @@ from bokio.exceptions import BokioAuthError
 from bokio.services import (
     create_draft_for_lumber,
     fetch_invoice_info,
+    list_draft_invoices,
     push_lumber_to_invoice,
 )
 from mill.models import Log, Lumber, Species
@@ -32,8 +33,11 @@ def test_push_refuses_unsold(lumber):
 
 def test_push_maps_fields_and_persists_ids(lumber):
     with patch("bokio.services.get_client") as gc:
+        gc.return_value.get_invoice.return_value = {
+            "status": "draft", "customerRef": {"name": "Kund AB"},
+        }
         gc.return_value.add_line_item.return_value = {"id": "li-1"}
-        line_item_id = push_lumber_to_invoice(lumber, "inv-1")
+        line_item_id, customer = push_lumber_to_invoice(lumber, "inv-1")
 
     gc.return_value.add_line_item.assert_called_once()
     invoice_id, payload = gc.return_value.add_line_item.call_args.args
@@ -44,9 +48,18 @@ def test_push_maps_fields_and_persists_ids(lumber):
     assert "Tall" in payload["description"]
 
     assert line_item_id == "li-1"
+    assert customer == "Kund AB"
     lumber.refresh_from_db()
     assert lumber.bokio_invoice_id == "inv-1"
     assert lumber.bokio_line_item_id == "li-1"
+
+
+def test_push_refuses_when_invoice_not_draft(lumber):
+    with patch("bokio.services.get_client") as gc:
+        gc.return_value.get_invoice.return_value = {"status": "published"}
+        with pytest.raises(ValueError, match="utkast"):
+            push_lumber_to_invoice(lumber, "inv-1")
+        gc.return_value.add_line_item.assert_not_called()
 
 
 def test_push_refuses_when_already_pushed(lumber):
@@ -61,6 +74,7 @@ def test_push_refuses_when_already_pushed(lumber):
 
 def test_push_propagates_client_error(lumber):
     with patch("bokio.services.get_client") as gc:
+        gc.return_value.get_invoice.return_value = {"status": "draft"}
         gc.return_value.add_line_item.side_effect = BokioAuthError("nope")
         with pytest.raises(BokioAuthError):
             push_lumber_to_invoice(lumber, "inv-1")
@@ -140,3 +154,40 @@ def test_fetch_invoice_info_handles_missing_customer(db):
     assert info.customer_name == ""
     assert info.invoice_number == ""
     assert info.total_amount is None
+
+
+def test_list_draft_invoices_filters_and_labels(db):
+    with patch("bokio.services.get_client") as gc:
+        gc.return_value.list_invoices.return_value = {
+            "items": [
+                {
+                    "id": "inv-1", "status": "draft",
+                    "customerRef": {"name": "Kund AB"},
+                    "invoiceDate": "2026-05-20", "totalAmount": 200, "currency": "SEK",
+                },
+                {"id": "inv-2", "status": "published", "customerRef": {"name": "Annan"}},
+                {"id": "inv-3", "status": "draft", "invoiceDate": "2026-05-21"},
+            ],
+        }
+        drafts = list_draft_invoices()
+    gc.return_value.list_invoices.assert_called_once_with(status="draft", page_size=100)
+    ids = [d.id for d in drafts]
+    assert ids == ["inv-3", "inv-1"]  # published filtered out, newest first
+    assert "Kund AB" in drafts[1].label
+    assert "200 SEK" in drafts[1].label
+    assert "(ingen kund)" in drafts[0].label  # missing customer fallback
+
+
+def test_list_draft_invoices_newest_first_and_capped(db):
+    items = [
+        {"id": f"inv-{n:02d}", "status": "draft", "invoiceDate": f"2026-01-{n:02d}"}
+        for n in range(1, 13)  # 12 drafts, 2026-01-01 .. 2026-01-12
+    ]
+    with patch("bokio.services.get_client") as gc:
+        gc.return_value.list_invoices.return_value = {"items": items}
+        drafts = list_draft_invoices()
+    ids = [d.id for d in drafts]
+    assert len(ids) == 10  # capped
+    assert ids[0] == "inv-12"  # newest first
+    assert ids[-1] == "inv-03"  # two oldest dropped
+    assert "inv-01" not in ids and "inv-02" not in ids

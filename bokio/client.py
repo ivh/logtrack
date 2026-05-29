@@ -2,6 +2,7 @@ import logging
 import time
 from functools import lru_cache
 from typing import Any
+from urllib.parse import urlencode
 
 import requests
 from django.conf import settings
@@ -63,6 +64,12 @@ class BokioClient:
 
     def get_invoice(self, invoice_id: str) -> dict:
         return self._request("GET", f"/invoices/{invoice_id}")
+
+    def list_invoices(self, *, status: str | None = None, page_size: int = 100) -> dict:
+        params: dict[str, Any] = {"pageSize": page_size}
+        if status:
+            params["query"] = f"status=={status}"
+        return self._request("GET", f"/invoices?{urlencode(params)}")
 
     def add_line_item(self, invoice_id: str, line: dict[str, Any]) -> dict:
         return self._request("POST", f"/invoices/{invoice_id}/line-items", json=line)

@@ -8,12 +8,13 @@ from django.urls import path, reverse
 from django.utils.html import format_html, format_html_join
 from django.utils.safestring import SafeString, mark_safe
 from unfold.admin import ModelAdmin, TabularInline
-from unfold.widgets import UnfoldAdminDecimalFieldWidget
+from unfold.widgets import UnfoldAdminDecimalFieldWidget, UnfoldAdminSelectWidget
 
 from bokio.exceptions import BokioError
 from bokio.services import (
     create_draft_for_lumber,
     fetch_invoice_info,
+    list_draft_invoices,
     push_lumber_to_invoice,
 )
 
@@ -141,6 +142,31 @@ class LumberAdminForm(forms.ModelForm):
         inst = getattr(self, "instance", None)
         if inst is not None and inst.pk and inst.revenue_sek is not None:
             self.fields["total_price_sek"].initial = inst.revenue_sek
+        self._init_invoice_picker(inst)
+
+    def _init_invoice_picker(self, inst):
+        # Offer a dropdown of Bokio draft invoices to push onto, but only before
+        # this lumber has been pushed. Falls back to the plain text field (paste
+        # a GUID) when Bokio is unreachable.
+        if inst is None or not inst.pk or inst.bokio_line_item_id:
+            return
+        try:
+            drafts = list_draft_invoices()
+        except BokioError:
+            return
+        current = inst.bokio_invoice_id or ""
+        choices = [("", "— välj utkast —")]
+        choices += [(d.id, d.label) for d in drafts]
+        if current and current not in {d.id for d in drafts}:
+            choices.append((current, f"{current} (nuvarande)"))
+        self.fields["bokio_invoice_id"] = forms.ChoiceField(
+            label=self.fields["bokio_invoice_id"].label,
+            required=False,
+            choices=choices,
+            initial=current,
+            widget=UnfoldAdminSelectWidget(),
+            help_text="Välj ett befintligt Bokio-utkast att lägga raden på.",
+        )
 
     def clean(self):
         cleaned = super().clean()
@@ -394,7 +420,7 @@ class LumberAdmin(ModelAdmin):
         if not lumber.bokio_invoice_id:
             self.message_user(
                 request,
-                "Ange Bokio-faktura-id först (klistra in GUID från Bokio).",
+                "Välj ett Bokio-utkast först (spara raden efter valet).",
                 messages.ERROR,
             )
             return redirect
@@ -402,16 +428,17 @@ class LumberAdmin(ModelAdmin):
             self.message_user(request, "Sätt pris först.", messages.ERROR)
             return redirect
         try:
-            line_item_id = push_lumber_to_invoice(lumber, lumber.bokio_invoice_id)
+            line_item_id, customer = push_lumber_to_invoice(lumber, lumber.bokio_invoice_id)
         except BokioError as e:
             self.message_user(request, f"Bokio-fel: {e}", messages.ERROR)
             return redirect
         except ValueError as e:
             self.message_user(request, str(e), messages.ERROR)
             return redirect
+        to = f" till {customer}" if customer else ""
         self.message_user(
             request,
-            f"Skickat. Radobjekt {line_item_id or '(utan id)'}.",
+            f"Skickat{to}. Radobjekt {line_item_id or '(utan id)'}.",
             messages.SUCCESS,
         )
         return redirect

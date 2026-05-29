@@ -27,11 +27,22 @@ def _line_payload(lumber: Lumber) -> dict:
     }
 
 
-def push_lumber_to_invoice(lumber: Lumber, invoice_id: str) -> str:
+def push_lumber_to_invoice(lumber: Lumber, invoice_id: str) -> tuple[str, str]:
+    """Add this lumber as a line item on an existing invoice.
+
+    Returns (line_item_id, customer_name). Refuses unless the invoice is still
+    a draft — Bokio only allows adding lines to drafts.
+    """
     if lumber.unit_price_sek is None:
         raise ValueError("kan inte skicka osålt virke")
     if lumber.bokio_line_item_id:
         raise ValueError("virket är redan kopplat till ett Bokio-radobjekt")
+
+    info = fetch_invoice_info(invoice_id)
+    if info.status and info.status != "draft":
+        raise ValueError(
+            f"fakturan är inte ett utkast (status: {info.status}) — kan inte lägga till rader"
+        )
 
     response = get_client().add_line_item(invoice_id, _line_payload(lumber))
     line_item_id = str(response.get("id") or response.get("lineItemId") or "")
@@ -39,7 +50,7 @@ def push_lumber_to_invoice(lumber: Lumber, invoice_id: str) -> str:
     lumber.bokio_invoice_id = invoice_id
     lumber.bokio_line_item_id = line_item_id
     lumber.save(update_fields=["bokio_invoice_id", "bokio_line_item_id"])
-    return line_item_id
+    return line_item_id, info.customer_name
 
 
 def create_draft_for_lumber(lumber: Lumber) -> tuple[str, str]:
@@ -94,3 +105,33 @@ def fetch_invoice_info(invoice_id: str) -> InvoiceInfo:
         paid_amount=data.get("paidAmount"),
         due_date=str(data.get("dueDate") or ""),
     )
+
+
+@dataclass(frozen=True)
+class DraftInvoice:
+    id: str
+    label: str
+
+
+def list_draft_invoices(limit: int = 10) -> list[DraftInvoice]:
+    """List Bokio draft invoices as (id, human label) for the push picker.
+
+    Newest first (by invoiceDate), capped at `limit` — Bokio accumulates old
+    abandoned drafts, so an unbounded list is useless. Draft invoices have no
+    invoiceNumber yet, so the label is built from customer, date and total.
+    Raises BokioError (or a subclass) on failure.
+    """
+    data = get_client().list_invoices(status="draft", page_size=100)
+    items = [i for i in (data.get("items") or []) if str(i.get("status") or "") == "draft"]
+    items.sort(key=lambda i: str(i.get("invoiceDate") or ""), reverse=True)
+    drafts = []
+    for inv in items[:limit]:
+        customer = str((inv.get("customerRef") or {}).get("name") or "") or "(ingen kund)"
+        parts = [customer]
+        if inv.get("invoiceDate"):
+            parts.append(str(inv["invoiceDate"]))
+        if inv.get("totalAmount") is not None:
+            cur = inv.get("currency") or ""
+            parts.append(f"{inv['totalAmount']:g} {cur}".strip())
+        drafts.append(DraftInvoice(id=str(inv.get("id") or ""), label=" · ".join(parts)))
+    return drafts

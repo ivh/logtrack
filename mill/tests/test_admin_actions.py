@@ -3,6 +3,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
+from django import forms
 from django.contrib.auth.models import User
 from django.urls import reverse
 
@@ -59,7 +60,7 @@ def test_push_to_bokio_refuses_without_invoice_id(staff_client, lumber_pair):
     url = reverse("admin:mill_lumber_push_to_bokio", args=[priced.pk])
     resp = staff_client.get(url, follow=True)
     msgs = [m.message for m in resp.context["messages"]]
-    assert any("Bokio-faktura-id" in m for m in msgs)
+    assert any("Bokio-utkast" in m for m in msgs)
 
 
 def test_push_to_bokio_happy_path(staff_client, lumber_pair):
@@ -67,11 +68,16 @@ def test_push_to_bokio_happy_path(staff_client, lumber_pair):
     priced.bokio_invoice_id = "inv-99"
     priced.save()
     with patch("bokio.services.get_client") as gc:
+        gc.return_value.get_invoice.return_value = {
+            "status": "draft", "customerRef": {"name": "Kund AB"},
+        }
         gc.return_value.add_line_item.return_value = {"id": "li-99"}
         url = reverse("admin:mill_lumber_push_to_bokio", args=[priced.pk])
-        staff_client.get(url)
+        resp = staff_client.get(url, follow=True)
     priced.refresh_from_db()
     assert priced.bokio_line_item_id == "li-99"
+    msgs = [m.message for m in resp.context["messages"]]
+    assert any("Kund AB" in m for m in msgs)
 
 
 def test_push_to_bokio_refuses_when_already_pushed(staff_client, lumber_pair):
@@ -233,3 +239,47 @@ def test_lumber_change_page_renders_when_linked_to_bokio(staff_client, lumber_pa
     resp = staff_client.get(url)
     assert resp.status_code == 200
     assert b"Utkast redan kopplat" in resp.content
+
+
+def test_change_page_offers_draft_picker_before_push(staff_client, lumber_pair):
+    _, priced = lumber_pair  # priced, not yet pushed (no line item)
+    with patch("bokio.services.get_client") as gc:
+        gc.return_value.list_invoices.return_value = {
+            "items": [
+                {
+                    "id": "inv-aaa", "status": "draft",
+                    "customerRef": {"name": "Kund AB"},
+                    "invoiceDate": "2026-05-20", "totalAmount": 200, "currency": "SEK",
+                },
+            ],
+        }
+        url = reverse("admin:mill_lumber_change", args=[priced.pk])
+        resp = staff_client.get(url)
+    field = resp.context["adminform"].form.fields["bokio_invoice_id"]
+    assert isinstance(field, forms.ChoiceField)
+    values = [v for v, _ in field.choices]
+    assert "inv-aaa" in values
+    assert any("Kund AB" in str(label) for _, label in field.choices)
+
+
+def test_picker_degrades_to_text_when_bokio_unreachable(staff_client, lumber_pair):
+    _, priced = lumber_pair
+    with patch("mill.admin.list_draft_invoices", side_effect=BokioAuthError("nej")):
+        url = reverse("admin:mill_lumber_change", args=[priced.pk])
+        resp = staff_client.get(url)
+    field = resp.context["adminform"].form.fields["bokio_invoice_id"]
+    assert not isinstance(field, forms.ChoiceField)
+
+
+def test_picker_not_built_once_pushed(staff_client, lumber_pair):
+    _, priced = lumber_pair
+    priced.bokio_invoice_id = "inv-99"
+    priced.bokio_line_item_id = "li-99"
+    priced.save()
+    with patch("mill.admin.list_draft_invoices") as ldi, patch("bokio.services.get_client") as gc:
+        gc.return_value.get_invoice.return_value = {"status": "draft"}
+        url = reverse("admin:mill_lumber_change", args=[priced.pk])
+        resp = staff_client.get(url)
+    ldi.assert_not_called()
+    field = resp.context["adminform"].form.fields["bokio_invoice_id"]
+    assert not isinstance(field, forms.ChoiceField)

@@ -113,6 +113,22 @@ def test_get_invoice_returns_body():
 
 
 @responses.activate
+def test_list_invoices_sends_status_filter():
+    url = f"{API}/companies/{COMPANY}/invoices"
+    responses.add(
+        responses.GET,
+        url,
+        json={"items": [{"id": "inv-1", "status": "draft"}], "totalItems": 1},
+        status=200,
+    )
+    result = _client().list_invoices(status="draft", page_size=50)
+    assert result["items"][0]["id"] == "inv-1"
+    sent = responses.calls[0].request
+    assert "query=status%3D%3Ddraft" in sent.url
+    assert "pageSize=50" in sent.url
+
+
+@responses.activate
 def test_get_invoice_404_raises_not_found():
     url = f"{API}/companies/{COMPANY}/invoices/gone"
     responses.add(responses.GET, url, status=404)
