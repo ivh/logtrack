@@ -13,8 +13,17 @@ dev = [
     "pytest>=9.0.3",
     "pytest-django>=4.12.0",
     "responses>=0.26.1",
+    "ruff>=0.15.15",
 ]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "logtrack.settings"
 python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+extend-exclude = ["*/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

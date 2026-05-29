@@ -45,6 +45,16 @@ def test_push_maps_fields_and_persists_ids(lumber):
     assert lumber.bokio_line_item_id == "li-1"
 
 
+def test_push_refuses_when_already_pushed(lumber):
+    lumber.bokio_invoice_id = "inv-1"
+    lumber.bokio_line_item_id = "li-1"
+    lumber.save()
+    with patch("bokio.services.get_client") as gc:
+        with pytest.raises(ValueError, match="redan kopplat"):
+            push_lumber_to_invoice(lumber, "inv-1")
+        gc.return_value.add_line_item.assert_not_called()
+
+
 def test_push_propagates_client_error(lumber):
     with patch("bokio.services.get_client") as gc:
         gc.return_value.add_line_item.side_effect = BokioAuthError("nope")
@@ -60,6 +70,15 @@ def test_create_draft_refuses_unsold(lumber):
     lumber.save()
     with pytest.raises(ValueError, match="osålt"):
         create_draft_for_lumber(lumber)
+
+
+def test_create_draft_refuses_when_already_linked(lumber):
+    lumber.bokio_invoice_id = "inv-existing"
+    lumber.save()
+    with patch("bokio.services.get_client") as gc:
+        with pytest.raises(ValueError, match="redan kopplat"):
+            create_draft_for_lumber(lumber)
+        gc.return_value.create_draft_invoice.assert_not_called()
 
 
 def test_create_draft_payload_and_persists_ids(lumber):

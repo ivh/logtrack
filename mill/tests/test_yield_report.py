@@ -23,9 +23,9 @@ def species(db):
     }
 
 
-def _log(species, d, l, mill_date):
+def _log(species, d, length, mill_date):
     return Log.objects.create(
-        species=species, diameter_cm=d, length_cm=l, mill_date=mill_date
+        species=species, diameter_cm=d, length_cm=length, mill_date=mill_date
     )
 
 
