@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -64,3 +65,32 @@ def create_draft_for_lumber(lumber: Lumber) -> tuple[str, str]:
     lumber.bokio_line_item_id = line_item_id
     lumber.save(update_fields=["bokio_invoice_id", "bokio_line_item_id"])
     return invoice_id, line_item_id
+
+
+@dataclass(frozen=True)
+class InvoiceInfo:
+    status: str
+    customer_name: str
+    invoice_number: str
+    currency: str
+    total_amount: float | None
+    paid_amount: float | None
+    due_date: str
+
+
+def fetch_invoice_info(invoice_id: str) -> InvoiceInfo:
+    """Read-only fetch of the live invoice from Bokio, normalized for display.
+
+    Raises BokioError (or a subclass) when Bokio is unreachable/misconfigured.
+    """
+    data = get_client().get_invoice(invoice_id)
+    customer = data.get("customerRef") or {}
+    return InvoiceInfo(
+        status=str(data.get("status") or ""),
+        customer_name=str(customer.get("name") or ""),
+        invoice_number=str(data.get("invoiceNumber") or ""),
+        currency=str(data.get("currency") or ""),
+        total_amount=data.get("totalAmount"),
+        paid_amount=data.get("paidAmount"),
+        due_date=str(data.get("dueDate") or ""),
+    )

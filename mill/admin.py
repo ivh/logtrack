@@ -5,17 +5,33 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.http import HttpResponseRedirect
 from django.urls import path, reverse
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 from django.utils.safestring import SafeString, mark_safe
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.widgets import UnfoldAdminDecimalFieldWidget
 
 from bokio.exceptions import BokioError
-from bokio.services import create_draft_for_lumber, push_lumber_to_invoice
+from bokio.services import (
+    create_draft_for_lumber,
+    fetch_invoice_info,
+    push_lumber_to_invoice,
+)
 
 from .models import Log, Lumber, Species
 
 BTN_CLS = "bg-primary-600 hover:bg-primary-700 text-white rounded-md px-3 py-2 text-sm font-medium inline-block"
+
+# Bokio invoice status enum -> Swedish label (see bokio company-api spec).
+BOKIO_STATUS_SV = {
+    "draft": "Utkast",
+    "published": "Publicerad",
+    "paid": "Betald",
+    "overPaid": "Överbetald",
+    "underPaid": "Delbetald",
+    "overdue": "Förfallen",
+    "credited": "Krediterad",
+    "credit": "Kreditfaktura",
+}
 
 
 def _bokio_invoice_url(invoice_id: str) -> str:
@@ -195,6 +211,7 @@ class LumberAdmin(ModelAdmin):
                 ("unit_price_sek", "suggested_price_sek_display"),
                 "total_price_sek",
                 ("bokio_invoice_id", "bokio_invoice_link"),
+                "bokio_status_display",
                 "create_bokio_draft_button",
                 "push_to_bokio_button",
                 "bokio_line_item_id",
@@ -205,6 +222,7 @@ class LumberAdmin(ModelAdmin):
         "status_changed_at",
         "suggested_price_sek_display",
         "bokio_invoice_link",
+        "bokio_status_display",
         "create_bokio_draft_button",
         "push_to_bokio_button",
         "bokio_line_item_id",
@@ -284,6 +302,37 @@ class LumberAdmin(ModelAdmin):
             '<a href="{}" target="_blank" rel="noopener" class="{}">Öppna i Bokio</a>',
             url, BTN_CLS,
         )
+
+    @admin.display(description="Bokio-status")
+    def bokio_status_display(self, obj: Lumber) -> SafeString:
+        if obj.pk is None or not obj.bokio_invoice_id:
+            return mark_safe("—")
+        try:
+            info = fetch_invoice_info(obj.bokio_invoice_id)
+        except BokioError as e:
+            return format_html(
+                '<span class="text-red-600">Kunde inte hämta från Bokio: {}</span>', str(e)
+            )
+        status = BOKIO_STATUS_SV.get(info.status, info.status or "—")
+        rows = [("Status", status)]
+        if info.customer_name:
+            rows.append(("Kund", info.customer_name))
+        if info.invoice_number:
+            rows.append(("Fakturanr", info.invoice_number))
+        if info.total_amount is not None:
+            cur = f" {info.currency}" if info.currency else ""
+            amount = f"{info.total_amount:g}{cur}"
+            if info.paid_amount:
+                amount += f" (betalt {info.paid_amount:g}{cur})"
+            rows.append(("Belopp", amount))
+        if info.due_date:
+            rows.append(("Förfaller", info.due_date))
+        body = format_html_join(
+            "",
+            '<tr><th class="text-left pr-3 font-medium align-top">{}</th><td>{}</td></tr>',
+            rows,
+        )
+        return format_html('<table>{}</table>', body)
 
     @admin.display(description="")
     def create_bokio_draft_button(self, obj: Lumber) -> SafeString:

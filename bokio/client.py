@@ -61,6 +61,9 @@ class BokioClient:
             return {}
         return resp.json()
 
+    def get_invoice(self, invoice_id: str) -> dict:
+        return self._request("GET", f"/invoices/{invoice_id}")
+
     def add_line_item(self, invoice_id: str, line: dict[str, Any]) -> dict:
         return self._request("POST", f"/invoices/{invoice_id}/line-items", json=line)
 

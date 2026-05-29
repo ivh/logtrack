@@ -96,6 +96,30 @@ def test_create_draft_invoice_posts_to_invoices():
     assert responses.calls[0].request.headers["Authorization"] == "Bearer tok"
 
 
+@responses.activate
+def test_get_invoice_returns_body():
+    url = f"{API}/companies/{COMPANY}/invoices/inv-1"
+    responses.add(
+        responses.GET,
+        url,
+        json={"id": "inv-1", "status": "published", "customerRef": {"name": "Kund AB"}},
+        status=200,
+    )
+    result = _client().get_invoice("inv-1")
+    assert result["status"] == "published"
+    assert result["customerRef"]["name"] == "Kund AB"
+    assert responses.calls[0].request.method == "GET"
+    assert responses.calls[0].request.headers["Authorization"] == "Bearer tok"
+
+
+@responses.activate
+def test_get_invoice_404_raises_not_found():
+    url = f"{API}/companies/{COMPANY}/invoices/gone"
+    responses.add(responses.GET, url, status=404)
+    with pytest.raises(BokioNotFound):
+        _client().get_invoice("gone")
+
+
 def test_url_includes_v1_prefix_and_company_id():
     c = _client()
     assert c._url("/invoices") == f"{API}/companies/{COMPANY}/invoices"

@@ -6,6 +6,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.urls import reverse
 
+from bokio.exceptions import BokioAuthError
 from mill.models import Log, Lumber, Species
 
 
@@ -79,6 +80,8 @@ def test_push_to_bokio_refuses_when_already_pushed(staff_client, lumber_pair):
     priced.bokio_line_item_id = "li-99"
     priced.save()
     with patch("bokio.services.get_client") as gc:
+        # follow=True renders the change page, which fetches the linked invoice
+        gc.return_value.get_invoice.return_value = {"status": "draft"}
         url = reverse("admin:mill_lumber_push_to_bokio", args=[priced.pk])
         resp = staff_client.get(url, follow=True)
     gc.return_value.add_line_item.assert_not_called()
@@ -129,6 +132,48 @@ def test_create_bokio_draft_refuses_when_unpriced(staff_client, lumber_pair):
         url = reverse("admin:mill_lumber_create_bokio_draft", args=[unpriced.pk])
         staff_client.get(url)
     gc.return_value.create_draft_invoice.assert_not_called()
+
+
+def test_change_page_shows_bokio_status_when_invoice_linked(staff_client, lumber_pair):
+    _, priced = lumber_pair
+    priced.bokio_invoice_id = "inv-99"
+    priced.save()
+    with patch("bokio.services.get_client") as gc:
+        gc.return_value.get_invoice.return_value = {
+            "status": "published",
+            "customerRef": {"name": "Kund AB"},
+            "invoiceNumber": "1234",
+            "currency": "SEK",
+            "totalAmount": 200,
+            "paidAmount": 0,
+            "dueDate": "2026-06-30",
+        }
+        url = reverse("admin:mill_lumber_change", args=[priced.pk])
+        resp = staff_client.get(url)
+    gc.return_value.get_invoice.assert_called_once_with("inv-99")
+    assert resp.status_code == 200
+    assert b"Publicerad" in resp.content
+    assert b"Kund AB" in resp.content
+
+
+def test_change_page_skips_bokio_fetch_without_invoice_id(staff_client, lumber_pair):
+    _, priced = lumber_pair  # no bokio_invoice_id
+    with patch("mill.admin.fetch_invoice_info") as fii:
+        url = reverse("admin:mill_lumber_change", args=[priced.pk])
+        resp = staff_client.get(url)
+    assert resp.status_code == 200
+    fii.assert_not_called()
+
+
+def test_change_page_degrades_when_bokio_unreachable(staff_client, lumber_pair):
+    _, priced = lumber_pair
+    priced.bokio_invoice_id = "inv-99"
+    priced.save()
+    with patch("mill.admin.fetch_invoice_info", side_effect=BokioAuthError("ogiltig token")):
+        url = reverse("admin:mill_lumber_change", args=[priced.pk])
+        resp = staff_client.get(url)
+    assert resp.status_code == 200
+    assert b"Kunde inte h" in resp.content  # "Kunde inte hämta..."
 
 
 def test_total_price_field_prefilled_on_existing_lumber(staff_client, lumber_pair):

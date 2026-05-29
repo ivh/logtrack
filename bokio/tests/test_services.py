@@ -5,7 +5,11 @@ from unittest.mock import patch
 import pytest
 
 from bokio.exceptions import BokioAuthError
-from bokio.services import create_draft_for_lumber, push_lumber_to_invoice
+from bokio.services import (
+    create_draft_for_lumber,
+    fetch_invoice_info,
+    push_lumber_to_invoice,
+)
 from mill.models import Log, Lumber, Species
 
 
@@ -104,3 +108,35 @@ def test_create_draft_payload_and_persists_ids(lumber):
     lumber.refresh_from_db()
     assert lumber.bokio_invoice_id == "inv-new"
     assert lumber.bokio_line_item_id == "12345"
+
+
+def test_fetch_invoice_info_normalizes_fields(db):
+    with patch("bokio.services.get_client") as gc:
+        gc.return_value.get_invoice.return_value = {
+            "id": "inv-1",
+            "status": "published",
+            "customerRef": {"id": "c-1", "name": "Kund AB"},
+            "invoiceNumber": "1234",
+            "currency": "SEK",
+            "totalAmount": 200,
+            "paidAmount": 0,
+            "dueDate": "2026-06-30",
+        }
+        info = fetch_invoice_info("inv-1")
+    gc.return_value.get_invoice.assert_called_once_with("inv-1")
+    assert info.status == "published"
+    assert info.customer_name == "Kund AB"
+    assert info.invoice_number == "1234"
+    assert info.currency == "SEK"
+    assert info.total_amount == 200
+    assert info.due_date == "2026-06-30"
+
+
+def test_fetch_invoice_info_handles_missing_customer(db):
+    with patch("bokio.services.get_client") as gc:
+        gc.return_value.get_invoice.return_value = {"id": "inv-1", "status": "draft"}
+        info = fetch_invoice_info("inv-1")
+    assert info.status == "draft"
+    assert info.customer_name == ""
+    assert info.invoice_number == ""
+    assert info.total_amount is None
