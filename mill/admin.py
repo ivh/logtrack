@@ -298,6 +298,8 @@ class LumberAdmin(ModelAdmin):
     def push_to_bokio_button(self, obj: Lumber) -> SafeString:
         if obj.pk is None:
             return mark_safe("—")
+        if obj.bokio_line_item_id:
+            return mark_safe("<em>Redan skickat till Bokio.</em>")
         url = reverse("admin:mill_lumber_push_to_bokio", args=[obj.pk])
         return format_html('<a href="{}" class="{}">Skicka till Bokio</a>', url, BTN_CLS)
 
@@ -354,6 +356,9 @@ class LumberAdmin(ModelAdmin):
             line_item_id = push_lumber_to_invoice(lumber, lumber.bokio_invoice_id)
         except BokioError as e:
             self.message_user(request, f"Bokio-fel: {e}", messages.ERROR)
+            return redirect
+        except ValueError as e:
+            self.message_user(request, str(e), messages.ERROR)
             return redirect
         self.message_user(
             request,

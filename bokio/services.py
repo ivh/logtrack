@@ -29,6 +29,8 @@ def _line_payload(lumber: Lumber) -> dict:
 def push_lumber_to_invoice(lumber: Lumber, invoice_id: str) -> str:
     if lumber.unit_price_sek is None:
         raise ValueError("kan inte skicka osålt virke")
+    if lumber.bokio_line_item_id:
+        raise ValueError("virket är redan kopplat till ett Bokio-radobjekt")
 
     response = get_client().add_line_item(invoice_id, _line_payload(lumber))
     line_item_id = str(response.get("id") or response.get("lineItemId") or "")
@@ -46,6 +48,8 @@ def create_draft_for_lumber(lumber: Lumber) -> tuple[str, str]:
     """
     if lumber.unit_price_sek is None:
         raise ValueError("kan inte skapa utkast för osålt virke")
+    if lumber.bokio_invoice_id:
+        raise ValueError("virket är redan kopplat till en Bokio-faktura")
 
     payload = {
         "invoiceDate": date.today().isoformat(),

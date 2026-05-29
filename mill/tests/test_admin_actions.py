@@ -73,6 +73,30 @@ def test_push_to_bokio_happy_path(staff_client, lumber_pair):
     assert priced.bokio_line_item_id == "li-99"
 
 
+def test_push_to_bokio_refuses_when_already_pushed(staff_client, lumber_pair):
+    _, priced = lumber_pair
+    priced.bokio_invoice_id = "inv-99"
+    priced.bokio_line_item_id = "li-99"
+    priced.save()
+    with patch("bokio.services.get_client") as gc:
+        url = reverse("admin:mill_lumber_push_to_bokio", args=[priced.pk])
+        resp = staff_client.get(url, follow=True)
+    gc.return_value.add_line_item.assert_not_called()
+    msgs = [m.message for m in resp.context["messages"]]
+    assert any("redan kopplat" in m for m in msgs)
+
+
+def test_push_button_hidden_once_pushed(staff_client, lumber_pair):
+    _, priced = lumber_pair
+    priced.bokio_invoice_id = "inv-99"
+    priced.bokio_line_item_id = "li-99"
+    priced.save()
+    url = reverse("admin:mill_lumber_change", args=[priced.pk])
+    resp = staff_client.get(url)
+    assert resp.status_code == 200
+    assert b"Redan skickat till Bokio" in resp.content
+
+
 def test_create_bokio_draft_happy_path(staff_client, lumber_pair):
     _, priced = lumber_pair
     with patch("bokio.services.get_client") as gc:
