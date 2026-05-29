@@ -30,16 +30,27 @@ if _env_file.exists():
         os.environ.setdefault(_k.strip(), _v.strip())
 
 
-# Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
+# Defaults are safe-for-prod: placeholder secret, DEBUG off, no hosts. Local
+# dev opts into convenience via .env; a misconfigured prod fails closed.
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-b-^3sn1!6$m08@x(bb&m=kd%e-ee%07!ute61-qcc&lytt%ip+'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-dev-only-key')
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'false').lower() in ('1', 'true', 'yes')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if h.strip()]
+
+# Internet-facing hardening. Secure cookies require the site to be served over
+# HTTPS; skipped in DEBUG so local HTTP dev still works.
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    CSRF_TRUSTED_ORIGINS = [
+        o.strip() for o in os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()
+    ]
+    # Set when behind a TLS-terminating reverse proxy that sets X-Forwarded-Proto.
+    if os.environ.get('DJANGO_BEHIND_TLS_PROXY', '').lower() in ('1', 'true', 'yes'):
+        SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 
 # Application definition

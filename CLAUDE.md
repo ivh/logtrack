@@ -124,9 +124,30 @@ Workflow:
   log count, m³ sawn (only measured logs contribute). Most recent first;
   the latest marked session is tagged "(pågående)".
 
+## Settings & environment
+
+Security-sensitive settings come from env (loaded from `.env` via the inline
+loader in `settings.py`; real env vars win over `.env`). Defaults are
+**safe-for-prod** — a misconfigured prod fails closed, local dev opts into
+convenience via `.env`:
+
+- `DJANGO_SECRET_KEY` — defaults to an obvious `django-insecure-` placeholder.
+  The original committed key is **burned** — rotate, don't reuse.
+- `DJANGO_DEBUG` — `1`/`true`/`yes` to enable; **defaults off**.
+- `DJANGO_ALLOWED_HOSTS` — comma-separated; empty by default.
+
+When `DEBUG` is off, a hardening block sets secure session/CSRF cookies, plus
+`CSRF_TRUSTED_ORIGINS` (from `DJANGO_CSRF_TRUSTED_ORIGINS`, comma-sep) and
+`SECURE_PROXY_SSL_HEADER` (only when `DJANGO_BEHIND_TLS_PROXY` is truthy — set
+it behind a TLS-terminating reverse proxy). Secure cookies need HTTPS, so the
+block is **skipped in DEBUG** to keep local HTTP dev working. HSTS /
+SSL-redirect are intentionally left to the proxy. `.env.example` documents
+every var (Django + Bokio).
+
 ## Running
 
 ```
+cp .env.example .env      # then fill it in; local dev wants DJANGO_DEBUG=true
 uv run python manage.py migrate
 uv run python manage.py runserver
 uv run pytest
@@ -138,11 +159,19 @@ just raise `BokioConfigError` until the env is populated.
 ## Tests
 
 - `pytest-django`, settings module via `pyproject.toml`.
-- 50+ tests; suite runs in ~2s.
+- 60+ tests; suite runs in ~2s.
 - All Bokio HTTP is mocked via `responses` (`bokio/tests/test_client.py`) or
   by patching `bokio.services.get_client` (`bokio/tests/test_services.py`).
 - Admin actions tested with `force_login`'d superuser + URL reverse.
 - Don't add live Bokio calls — there's no sandbox env.
+
+## Lint & pre-push hook
+
+- `ruff` (dev dep) lints with its default E/F ruleset: `uv run ruff check .`.
+- `.git/hooks/pre-push` runs `ruff check` + `pytest` and blocks the push on
+  failure. It's **local-only** — `.git/hooks` isn't tracked, so it won't
+  survive a fresh clone; recreate it by hand (or point `core.hooksPath` at a
+  tracked dir) on a new machine.
 
 ## House rules (user preferences)
 
