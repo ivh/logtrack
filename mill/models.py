@@ -54,7 +54,7 @@ class Log(models.Model):
 
     @property
     def lumber_volume_m3(self) -> float:
-        return sum((b.volume_m3 for b in self.lumber.all()), 0.0)
+        return sum((s.volume_m3 for s in self.lumber_sources.all()), 0.0)
 
     @property
     def yield_pct(self) -> float | None:
@@ -73,13 +73,12 @@ class Lumber(models.Model):
         USED_FARM = "used_farm", "använt gården"
         USED_PRIVATE = "used_private", "använt privat"
 
-    log = models.ForeignKey(
-        Log, on_delete=models.CASCADE, related_name="lumber", verbose_name="stock"
+    logs = models.ManyToManyField(
+        Log, through="LumberSource", related_name="lumber_batches", verbose_name="stockar"
     )
     thickness_mm = models.PositiveSmallIntegerField("tjocklek (mm)")
     width_mm = models.PositiveSmallIntegerField("bredd (mm)")
     length_mm = models.PositiveIntegerField("längd (mm)")
-    count = models.PositiveSmallIntegerField("antal", default=1)
     status = models.CharField(
         "status", max_length=16, choices=Status.choices, default=Status.GREEN
     )
@@ -101,6 +100,19 @@ class Lumber(models.Model):
     def __str__(self) -> str:
         return f"{self.count}x {self.thickness_mm}x{self.width_mm}x{self.length_mm}mm"
 
+    @property
+    def count(self) -> int:
+        if not self.pk:
+            return 0
+        return sum(s.count for s in self.sources.all())
+
+    @property
+    def species_label(self) -> str:
+        if not self.pk:
+            return ""
+        names = sorted({s.log.species.name for s in self.sources.select_related("log__species")})
+        return " / ".join(names)
+
     @classmethod
     def from_db(cls, db, field_names, values):
         instance = super().from_db(db, field_names, values)
@@ -114,8 +126,12 @@ class Lumber(models.Model):
         self._loaded_status = self.status
 
     @property
+    def unit_volume_m3(self) -> float:
+        return self.thickness_mm * self.width_mm * self.length_mm / 1e9
+
+    @property
     def volume_m3(self) -> float:
-        return self.thickness_mm * self.width_mm * self.length_mm * self.count / 1e9
+        return self.unit_volume_m3 * self.count
 
     @property
     def days_in_status(self) -> int | None:
@@ -149,3 +165,39 @@ class Lumber(models.Model):
         if self.unit_price_sek is None:
             return None
         return (self.unit_price_sek * self.count).quantize(Decimal("0.01"))
+
+
+class LumberSource(models.Model):
+    """How many boards of a Lumber batch came from a given Log.
+
+    The batch (Lumber) is the saleable unit; each source row preserves the
+    per-log production split so yield stays attributable to the right log.
+    """
+
+    lumber = models.ForeignKey(
+        Lumber, on_delete=models.CASCADE, related_name="sources", verbose_name="virkesparti"
+    )
+    log = models.ForeignKey(
+        Log, on_delete=models.CASCADE, related_name="lumber_sources", verbose_name="stock"
+    )
+    count = models.PositiveSmallIntegerField("antal", default=1)
+
+    class Meta:
+        verbose_name = "stockandel"
+        verbose_name_plural = "stockandelar"
+        constraints = [
+            models.UniqueConstraint(fields=["lumber", "log"], name="uniq_lumber_log"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.count}st från stock #{self.log_id}"
+
+    @property
+    def volume_m3(self) -> float:
+        return self.lumber.unit_volume_m3 * self.count
+
+    @property
+    def revenue_sek(self) -> Decimal | None:
+        if self.lumber.unit_price_sek is None:
+            return None
+        return (self.lumber.unit_price_sek * self.count).quantize(Decimal("0.01"))

@@ -11,15 +11,16 @@ from bokio.services import (
     list_draft_invoices,
     push_lumber_to_invoice,
 )
-from mill.models import Log, Lumber, Species
+from mill.models import Log, Species
+from mill.tests.helpers import make_lumber
 
 
 @pytest.fixture
 def lumber(db):
     sp = Species.objects.create(name="Tall")
     log = Log.objects.create(species=sp, diameter_cm=20, length_cm=300, mill_date=date(2026, 5, 1))
-    return Lumber.objects.create(
-        log=log, thickness_mm=50, width_mm=100, length_mm=3000, count=4,
+    return make_lumber(
+        log, count=4, thickness_mm=50, width_mm=100, length_mm=3000,
         unit_price_sek=Decimal("160.00"),
     )
 

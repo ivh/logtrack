@@ -1,0 +1,28 @@
+{% extends "admin/change_form.html" %}
+
+{# Place the source-log inline (stockandelar) above the price/Bokio box so the
+   data-entry flow reads dimensions -> source logs -> pricing. #}
+
+{% block field_sets %}
+    {% with has_conditional_display=adminform.model_admin.conditional_fields %}
+        {% for fieldset in adminform %}
+            {% if "tab" not in fieldset.classes and fieldset.name != "Pris & försäljning" %}
+                {% include 'admin/includes/fieldset.html' %}
+            {% endif %}
+        {% endfor %}
+
+        {% for inline_admin_formset in inline_admin_formsets %}
+            {% include inline_admin_formset.opts.template %}
+        {% endfor %}
+
+        {% for fieldset in adminform %}
+            {% if "tab" not in fieldset.classes and fieldset.name == "Pris & försäljning" %}
+                {% include 'admin/includes/fieldset.html' %}
+            {% endif %}
+        {% endfor %}
+
+        {% include "unfold/helpers/fieldsets_tabs.html" %}
+    {% endwith %}
+{% endblock %}
+
+{% block inline_field_sets %}{% endblock %}

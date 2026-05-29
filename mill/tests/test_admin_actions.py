@@ -8,7 +8,9 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 
 from bokio.exceptions import BokioAuthError
-from mill.models import Log, Lumber, Species
+from mill.models import Log, Species
+
+from .helpers import make_lumber
 
 
 @pytest.fixture
@@ -22,12 +24,28 @@ def staff_client(db, client):
 def lumber_pair(db):
     sp = Species.objects.create(name="Tall")
     log = Log.objects.create(species=sp, diameter_cm=20, length_cm=300, mill_date=date(2026, 5, 1))
-    unpriced = Lumber.objects.create(log=log, thickness_mm=50, width_mm=100, length_mm=3000, count=2)
-    priced = Lumber.objects.create(
-        log=log, thickness_mm=50, width_mm=100, length_mm=3000, count=2,
+    unpriced = make_lumber(log, count=2, thickness_mm=50, width_mm=100, length_mm=3000)
+    priced = make_lumber(
+        log, count=2, thickness_mm=50, width_mm=100, length_mm=3000,
         unit_price_sek=Decimal("999.00"),
     )
     return unpriced, priced
+
+
+def _sources_formset(lumber) -> dict:
+    """POST data for the LumberSource inline, echoing back existing rows."""
+    sources = list(lumber.sources.all())
+    data = {
+        "sources-TOTAL_FORMS": str(len(sources)),
+        "sources-INITIAL_FORMS": str(len(sources)),
+        "sources-MIN_NUM_FORMS": "0",
+        "sources-MAX_NUM_FORMS": "1000",
+    }
+    for i, s in enumerate(sources):
+        data[f"sources-{i}-id"] = str(s.pk)
+        data[f"sources-{i}-log"] = str(s.log_id)
+        data[f"sources-{i}-count"] = str(s.count)
+    return data
 
 
 def test_bulk_apply_suggested_price_only_fills_empty(staff_client, lumber_pair):
@@ -191,22 +209,18 @@ def test_total_price_field_prefilled_on_existing_lumber(staff_client, lumber_pai
 
 
 def test_entering_total_derives_unit_price(staff_client, lumber_pair):
-    unpriced, _ = lumber_pair  # count=2, no unit price
+    unpriced, _ = lumber_pair  # count=2 (one source), no unit price
     url = reverse("admin:mill_lumber_change", args=[unpriced.pk])
-    base = staff_client.get(url).context["adminform"].form.initial
-    payload = {**base, "total_price_sek": "1500", "unit_price_sek": ""}
-    # Carry over the required fields from the form
-    payload.update({
-        "log": str(unpriced.log.pk),
+    payload = {
         "thickness_mm": "50", "width_mm": "100", "length_mm": "3000",
-        "count": "2", "status": unpriced.status,
-        "lumber_set-TOTAL_FORMS": "0", "lumber_set-INITIAL_FORMS": "0",
-    })
-    payload.pop("status_changed_at", None)
+        "status": unpriced.status, "location": "", "notes": "",
+        "unit_price_sek": "", "total_price_sek": "1500", "bokio_invoice_id": "",
+    }
+    payload.update(_sources_formset(unpriced))
     resp = staff_client.post(url, payload)
     assert resp.status_code == 302, resp.content[:500]
     unpriced.refresh_from_db()
-    # 1500 / 2 = 750.00
+    # 1500 / 2 = 750.00 (count comes from the source rows, derived in save_related)
     assert unpriced.unit_price_sek == Decimal("750.00")
 
 
@@ -215,18 +229,36 @@ def test_entering_unit_only_does_not_get_clobbered_by_initial_total(staff_client
     url = reverse("admin:mill_lumber_change", args=[priced.pk])
     # User changes unit only; total field shows initial 1998 but wasn't touched
     payload = {
-        "log": str(priced.log.pk),
         "thickness_mm": "50", "width_mm": "100", "length_mm": "3000",
-        "count": "2", "status": priced.status,
+        "status": priced.status, "location": "", "notes": "",
         "unit_price_sek": "500.00", "total_price_sek": "1998.00",
-        "bokio_invoice_id": "", "notes": "", "location": "",
-        "lumber_set-TOTAL_FORMS": "0", "lumber_set-INITIAL_FORMS": "0",
+        "bokio_invoice_id": "",
     }
+    payload.update(_sources_formset(priced))
     resp = staff_client.post(url, payload)
     assert resp.status_code == 302, resp.content[:500]
     priced.refresh_from_db()
     # total was unchanged (still 1998, the initial) → unit stays as the user entered
     assert priced.unit_price_sek == Decimal("500.00")
+
+
+def test_changelist_uses_dims_as_link(staff_client, lumber_pair):
+    unpriced, _ = lumber_pair
+    resp = staff_client.get(reverse("admin:mill_lumber_changelist"))
+    assert resp.status_code == 200
+    html = resp.content.decode()
+    change_url = reverse("admin:mill_lumber_change", args=[unpriced.pk])
+    assert "50×100×3000" in html  # combined dimensions column
+    assert f'href="{change_url}"' in html  # dims links to the change page
+
+
+def test_source_inline_renders_above_price_box(staff_client, lumber_pair):
+    unpriced, _ = lumber_pair
+    url = reverse("admin:mill_lumber_change", args=[unpriced.pk])
+    html = staff_client.get(url).content.decode().lower()
+    assert "stockandel" in html  # source-log inline heading
+    assert "pris &amp; f" in html  # "Pris & försäljning" fieldset heading
+    assert html.index("stockandel") < html.index("pris &amp; f")
 
 
 def test_lumber_change_page_renders_when_linked_to_bokio(staff_client, lumber_pair):

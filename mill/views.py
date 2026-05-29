@@ -22,7 +22,7 @@ def yield_report(request):
     date_from = _parse_date(request.GET.get("from"))
     date_to = _parse_date(request.GET.get("to"))
 
-    logs = Log.objects.select_related("species").prefetch_related("lumber")
+    logs = Log.objects.select_related("species").prefetch_related("lumber_sources__lumber")
     if date_from:
         logs = logs.filter(mill_date__gte=date_from)
     if date_to:
@@ -57,10 +57,13 @@ def yield_report(request):
             total_log_v += log_v
             total_lumber_v_yield += log_lumber_v
         # Revenue is independent of measurement — every sold board counts.
-        for lumber in log.lumber.all():
-            if lumber.unit_price_sek is not None:
-                row["revenue"] += lumber.revenue_sek
-                total_revenue += lumber.revenue_sek
+        # Attribute per source (unit price × this log's count) so a batch
+        # spanning several logs isn't double-counted across species.
+        for source in log.lumber_sources.all():
+            rev = source.revenue_sek
+            if rev is not None:
+                row["revenue"] += rev
+                total_revenue += rev
 
     rows = []
     for row in sorted(by_species.values(), key=lambda r: r["species"]):

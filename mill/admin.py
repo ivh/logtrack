@@ -8,7 +8,11 @@ from django.urls import path, reverse
 from django.utils.html import format_html, format_html_join
 from django.utils.safestring import SafeString, mark_safe
 from unfold.admin import ModelAdmin, TabularInline
-from unfold.widgets import UnfoldAdminDecimalFieldWidget, UnfoldAdminSelectWidget
+from unfold.widgets import (
+    UnfoldAdminDecimalFieldWidget,
+    UnfoldAdminExpandableTextareaWidget,
+    UnfoldAdminSelectWidget,
+)
 
 from bokio.exceptions import BokioError
 from bokio.services import (
@@ -18,7 +22,7 @@ from bokio.services import (
     push_lumber_to_invoice,
 )
 
-from .models import Log, Lumber, Species
+from .models import Log, Lumber, LumberSource, Species
 
 BTN_CLS = "bg-primary-600 hover:bg-primary-700 text-white rounded-md px-3 py-2 text-sm font-medium inline-block"
 
@@ -48,19 +52,28 @@ class SpeciesAdmin(ModelAdmin):
     search_fields = ["name", "latin_name"]
 
 
-class LumberInline(TabularInline):
-    model = Lumber
-    extra = 1
-    fields = ["thickness_mm", "width_mm", "length_mm", "count", "status", "location", "notes"]
+class LumberSourceForLogInline(TabularInline):
+    """Batches drawn from this log (with the per-log board count)."""
 
-    def formfield_for_dbfield(self, db_field, request, **kwargs):
-        if db_field.name == "length_mm":
-            obj_id = request.resolver_match.kwargs.get("object_id") if request.resolver_match else None
-            if obj_id:
-                length_cm = Log.objects.filter(pk=obj_id).values_list("length_cm", flat=True).first()
-                if length_cm:
-                    kwargs["initial"] = length_cm * 10
-        return super().formfield_for_dbfield(db_field, request, **kwargs)
+    model = LumberSource
+    fk_name = "log"
+    extra = 0
+    autocomplete_fields = ["lumber"]
+    fields = ["lumber", "count"]
+    verbose_name = "virkesparti från denna stock"
+    verbose_name_plural = "virkespartier från denna stock"
+
+
+class LumberSourceForLumberInline(TabularInline):
+    """Source logs for this batch — add rows to combine several logs into one."""
+
+    model = LumberSource
+    fk_name = "lumber"
+    extra = 1
+    autocomplete_fields = ["log"]
+    fields = ["log", "count"]
+    verbose_name = "stockandel"
+    verbose_name_plural = "stockandelar (lägg till stockar i partiet)"
 
 
 @admin.register(Log)
@@ -80,7 +93,7 @@ class LogAdmin(ModelAdmin):
     search_fields = ["notes", "source"]
     date_hierarchy = "mill_date"
     autocomplete_fields = ["species"]
-    inlines = [LumberInline]
+    inlines = [LumberSourceForLogInline]
 
     fieldsets = (
         (None, {
@@ -136,6 +149,7 @@ class LumberAdminForm(forms.ModelForm):
     class Meta:
         model = Lumber
         fields = "__all__"
+        widgets = {"notes": UnfoldAdminExpandableTextareaWidget()}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -168,18 +182,8 @@ class LumberAdminForm(forms.ModelForm):
             help_text="Välj ett befintligt Bokio-utkast att lägga raden på.",
         )
 
-    def clean(self):
-        cleaned = super().clean()
-        if "total_price_sek" in self.changed_data:
-            total = cleaned.get("total_price_sek")
-            count = cleaned.get("count") or 1
-            if total is None:
-                cleaned["unit_price_sek"] = None
-            elif count > 0:
-                cleaned["unit_price_sek"] = (
-                    Decimal(total) / Decimal(count)
-                ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        return cleaned
+    # total_price_sek -> unit_price_sek is derived in LumberAdmin.save_related,
+    # once the source rows (and thus the board count) have been saved.
 
 
 class SoldFilter(admin.SimpleListFilter):
@@ -200,34 +204,28 @@ class SoldFilter(admin.SimpleListFilter):
 @admin.register(Lumber)
 class LumberAdmin(ModelAdmin):
     form = LumberAdminForm
+    inlines = [LumberSourceForLumberInline]
     list_display = [
-        "log",
-        "thickness_mm",
-        "width_mm",
-        "length_mm",
-        "count",
+        "dims_display",
+        "count_display",
+        "logs_display",
         "status",
         "days_in_status_display",
-        "location",
-        "unit_price_sek",
         "revenue_sek_display",
         "bokio_invoice_id_short",
         "volume_m3_display",
     ]
-    list_filter = [SoldFilter, "status", "location", "log__species"]
-    list_editable = ["status", "location"]
+    list_display_links = ["dims_display"]
+    list_filter = [SoldFilter, "status", "location", "logs__species"]
+    list_editable = ["status"]
     search_fields = ["notes", "location", "bokio_invoice_id"]
-    autocomplete_fields = ["log"]
     actions = ["apply_suggested_price_action"]
 
     fieldsets = (
         (None, {
             "fields": (
-                "log",
                 ("thickness_mm", "width_mm", "length_mm"),
-                "count",
-                "status",
-                "status_changed_at",
+                ("status", "status_changed_at"),
                 "location",
                 "notes",
             ),
@@ -278,9 +276,40 @@ class LumberAdmin(ModelAdmin):
 
     # ---- List-view displays ------------------------------------------------
 
+    @admin.display(description="dim (mm)", ordering="thickness_mm")
+    def dims_display(self, obj: Lumber) -> str:
+        return f"{obj.thickness_mm}×{obj.width_mm}×{obj.length_mm}"
+
     @admin.display(description="m³")
     def volume_m3_display(self, obj: Lumber) -> str:
         return f"{obj.volume_m3:.3f}"
+
+    @admin.display(description="stockar")
+    def logs_display(self, obj: Lumber) -> str:
+        return ", ".join(f"#{s.log_id}" for s in obj.sources.all()) or "—"
+
+    @admin.display(description="antal")
+    def count_display(self, obj: Lumber) -> int:
+        return obj.count
+
+    def save_related(self, request, form, formsets, change):
+        # Source rows carry the board count, so derive unit price from a
+        # typed-in total only after the inline formset has been saved.
+        super().save_related(request, form, formsets, change)
+        if "total_price_sek" not in form.changed_data:
+            return
+        total = form.cleaned_data.get("total_price_sek")
+        obj = form.instance
+        if total is None:
+            obj.unit_price_sek = None
+        else:
+            count = obj.count
+            if count <= 0:
+                return
+            obj.unit_price_sek = (Decimal(total) / Decimal(count)).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+        obj.save(update_fields=["unit_price_sek"])
 
     @admin.display(description="dagar", ordering="status_changed_at")
     def days_in_status_display(self, obj: Lumber) -> str:

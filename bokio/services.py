@@ -17,7 +17,7 @@ def _line_payload(lumber: Lumber) -> dict:
     return {
         "description": (
             f"{lumber.count}st {lumber.thickness_mm}×{lumber.width_mm}"
-            f"×{lumber.length_mm}mm {lumber.log.species}"
+            f"×{lumber.length_mm}mm {lumber.species_label}"
         ),
         "itemType": "salesItem",
         "productType": "goods",

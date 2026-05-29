@@ -5,7 +5,9 @@ import pytest
 from django.contrib.auth.models import User
 from django.urls import reverse
 
-from mill.models import Log, Lumber, Species
+from mill.models import Log, Species
+
+from .helpers import make_lumber
 
 
 @pytest.fixture
@@ -44,9 +46,9 @@ def test_yield_report_empty(staff_client):
 def test_yield_report_aggregates_by_species(staff_client, species):
     today = date(2026, 5, 1)
     log_t = _log(species["tall"], 20, 200, today)
-    Lumber.objects.create(log=log_t, thickness_mm=50, width_mm=100, length_mm=2000, count=2)
+    make_lumber(log_t, count=2, thickness_mm=50, width_mm=100, length_mm=2000)
     log_g = _log(species["gran"], 30, 300, today)
-    Lumber.objects.create(log=log_g, thickness_mm=25, width_mm=150, length_mm=3000, count=4)
+    make_lumber(log_g, count=4, thickness_mm=25, width_mm=150, length_mm=3000)
 
     resp = staff_client.get(reverse("mill:yield_report"))
     assert resp.status_code == 200
@@ -75,8 +77,8 @@ def test_yield_report_lumber_v_shows_all_yield_calc_uses_measured_only(staff_cli
     today = date(2026, 5, 1)
     measured = Log.objects.create(species=species["tall"], diameter_cm=20, length_cm=200, mill_date=today)
     unmeasured = Log.objects.create(species=species["tall"], diameter_cm=None, length_cm=200, mill_date=today)
-    Lumber.objects.create(log=measured, thickness_mm=50, width_mm=100, length_mm=2000, count=2)
-    Lumber.objects.create(log=unmeasured, thickness_mm=50, width_mm=100, length_mm=2000, count=4)
+    make_lumber(measured, count=2, thickness_mm=50, width_mm=100, length_mm=2000)
+    make_lumber(unmeasured, count=4, thickness_mm=50, width_mm=100, length_mm=2000)
 
     resp = staff_client.get(reverse("mill:yield_report"))
     ctx = resp.context
@@ -93,7 +95,7 @@ def test_yield_report_lumber_v_shows_all_yield_calc_uses_measured_only(staff_cli
 def test_yield_report_lumber_v_shows_all_even_with_no_measured_logs(staff_client, species):
     today = date(2026, 5, 1)
     unmeasured = Log.objects.create(species=species["tall"], diameter_cm=None, length_cm=200, mill_date=today)
-    Lumber.objects.create(log=unmeasured, thickness_mm=50, width_mm=100, length_mm=2000, count=3)
+    make_lumber(unmeasured, count=3, thickness_mm=50, width_mm=100, length_mm=2000)
 
     resp = staff_client.get(reverse("mill:yield_report"))
     row = next(r for r in resp.context["rows"] if r["species"] == "Tall")
@@ -105,12 +107,12 @@ def test_yield_report_lumber_v_shows_all_even_with_no_measured_logs(staff_client
 def test_yield_report_revenue_sums_only_sold(staff_client, species):
     today = date(2026, 5, 1)
     log = _log(species["tall"], 20, 200, today)
-    Lumber.objects.create(
-        log=log, thickness_mm=50, width_mm=100, length_mm=2000, count=4,
+    make_lumber(
+        log, count=4, thickness_mm=50, width_mm=100, length_mm=2000,
         unit_price_sek=Decimal("100.00"),
     )
-    Lumber.objects.create(
-        log=log, thickness_mm=25, width_mm=100, length_mm=2000, count=2,
+    make_lumber(
+        log, count=2, thickness_mm=25, width_mm=100, length_mm=2000,
         unit_price_sek=None,
     )
 
@@ -118,3 +120,28 @@ def test_yield_report_revenue_sums_only_sold(staff_client, species):
     rows = {r["species"]: r for r in resp.context["rows"]}
     assert rows["Tall"]["revenue"] == Decimal("400.00")
     assert resp.context["total_revenue"] == Decimal("400.00")
+
+
+def test_yield_report_multi_log_batch_attributes_per_source(staff_client, species):
+    # One saleable batch drawing from two species: revenue is attributed per
+    # source (unit price × that log's count) so it isn't double-counted, and
+    # each log's volume lands under its own species.
+    today = date(2026, 5, 1)
+    log_t = _log(species["tall"], 20, 200, today)
+    log_g = _log(species["gran"], 30, 300, today)
+    make_lumber(
+        sources=[(log_t, 3), (log_g, 2)],
+        thickness_mm=50, width_mm=100, length_mm=2000,
+        unit_price_sek=Decimal("100.00"),
+    )
+
+    resp = staff_client.get(reverse("mill:yield_report"))
+    ctx = resp.context
+    rows = {r["species"]: r for r in ctx["rows"]}
+    assert rows["Tall"]["revenue"] == Decimal("300.00")
+    assert rows["Gran"]["revenue"] == Decimal("200.00")
+    # 5 boards * unit 100 = 500 total, counted once across both species
+    assert ctx["total_revenue"] == Decimal("500.00")
+    # both logs are measured; each contributes its share of lumber volume
+    assert rows["Tall"]["lumber_v"] == pytest.approx(0.030)
+    assert rows["Gran"]["lumber_v"] == pytest.approx(0.020)
