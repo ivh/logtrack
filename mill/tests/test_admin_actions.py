@@ -48,6 +48,45 @@ def _sources_formset(lumber) -> dict:
     return data
 
 
+def _log_change_post(log) -> dict:
+    """Minimal POST body for the Log change page (echoes required fields)."""
+    return {
+        "species": str(log.species_id),
+        "length_cm": str(log.length_cm),
+        "mill_date": log.mill_date.isoformat(),
+        "lumber_sources-TOTAL_FORMS": "1",
+        "lumber_sources-INITIAL_FORMS": "0",
+        "lumber_sources-MIN_NUM_FORMS": "0",
+        "lumber_sources-MAX_NUM_FORMS": "1000",
+    }
+
+
+def test_log_inline_creates_new_lumber_from_dims(staff_client, db):
+    sp = Species.objects.create(name="Gran")
+    log = Log.objects.create(species=sp, diameter_cm=25, length_cm=400, mill_date=date(2026, 6, 1))
+    data = _log_change_post(log)
+    data["lumber_sources-0-new_dims"] = "50x100x2000"
+    data["lumber_sources-0-count"] = "7"
+    resp = staff_client.post(reverse("admin:mill_log_change", args=[log.pk]), data)
+    assert resp.status_code == 302
+    src = log.lumber_sources.get()
+    assert src.count == 7
+    assert (src.lumber.thickness_mm, src.lumber.width_mm, src.lumber.length_mm) == (50, 100, 2000)
+
+
+def test_log_inline_rejects_both_lumber_and_dims(staff_client, db):
+    sp = Species.objects.create(name="Gran")
+    log = Log.objects.create(species=sp, diameter_cm=25, length_cm=400, mill_date=date(2026, 6, 1))
+    existing = make_lumber(log, count=1, thickness_mm=25, width_mm=50, length_mm=1000)
+    data = _log_change_post(log)
+    data["lumber_sources-0-lumber"] = str(existing.pk)
+    data["lumber_sources-0-new_dims"] = "50x100x2000"
+    data["lumber_sources-0-count"] = "3"
+    resp = staff_client.post(reverse("admin:mill_log_change", args=[log.pk]), data)
+    assert resp.status_code == 200  # re-rendered with errors
+    assert log.lumber_sources.count() == 1  # only the pre-existing source
+
+
 def test_bulk_apply_suggested_price_only_fills_empty(staff_client, lumber_pair):
     unpriced, priced = lumber_pair
     resp = staff_client.post(

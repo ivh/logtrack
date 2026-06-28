@@ -1,8 +1,10 @@
+import re
 from decimal import ROUND_HALF_UP, Decimal
 
 from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
+from django.contrib.admin.views.autocomplete import AutocompleteJsonView
 from django.http import HttpResponseRedirect
 from django.urls import path, reverse
 from django.utils.html import format_html, format_html_join
@@ -52,14 +54,75 @@ class SpeciesAdmin(ModelAdmin):
     search_fields = ["name", "latin_name"]
 
 
+def _parse_dims(raw: str) -> tuple[int, int, int]:
+    parts = re.split(r"[x×]", raw.strip().lower())
+    if len(parts) != 3:
+        raise ValueError
+    t, w, length = (int(p) for p in parts)
+    if min(t, w, length) <= 0:
+        raise ValueError
+    return t, w, length
+
+
+class LumberSourceForLogForm(forms.ModelForm):
+    """Inline row on the Log page: link an existing batch, or spin up a new one.
+
+    Leave 'Virkesparti' empty and type dimensions in 'Nytt parti' to create a
+    fresh batch sourced from this log; otherwise pick an existing batch.
+    """
+
+    new_dims = forms.CharField(
+        label="nytt parti (TxBxL mm)",
+        required=False,
+        help_text="Lämna Virkesparti tomt och skriv mått, t.ex. 50x100x2000.",
+    )
+
+    class Meta:
+        model = LumberSource
+        fields = ["lumber", "count"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["lumber"].required = False
+
+    def clean(self):
+        cleaned = super().clean()
+        lumber = cleaned.get("lumber")
+        raw = (cleaned.get("new_dims") or "").strip()
+        if lumber and raw:
+            raise forms.ValidationError(
+                "Välj antingen ett befintligt virkesparti eller ange nya mått – inte båda."
+            )
+        if raw:
+            try:
+                cleaned["_new_dims"] = _parse_dims(raw)
+            except ValueError:
+                raise forms.ValidationError(
+                    "Ange nya mått som TxBxL i mm, t.ex. 50x100x2000."
+                ) from None
+        elif not lumber and self.has_changed():
+            raise forms.ValidationError("Välj ett virkesparti eller ange nya mått.")
+        return cleaned
+
+    def save(self, commit=True):
+        dims = self.cleaned_data.get("_new_dims")
+        if dims:
+            t, w, length = dims
+            self.instance.lumber = Lumber.objects.create(
+                thickness_mm=t, width_mm=w, length_mm=length
+            )
+        return super().save(commit=commit)
+
+
 class LumberSourceForLogInline(TabularInline):
     """Batches drawn from this log (with the per-log board count)."""
 
     model = LumberSource
+    form = LumberSourceForLogForm
     fk_name = "log"
     extra = 0
     autocomplete_fields = ["lumber"]
-    fields = ["lumber", "count"]
+    fields = ["lumber", "new_dims", "count"]
     verbose_name = "virkesparti från denna stock"
     verbose_name_plural = "virkespartier från denna stock"
 
@@ -201,10 +264,27 @@ class SoldFilter(admin.SimpleListFilter):
         return queryset
 
 
+class LumberAutocompleteJsonView(AutocompleteJsonView):
+    """Drop the board count from the dropdown label so it doesn't read as a
+    per-log quantity next to the inline 'Antal' field."""
+
+    def serialize_result(self, obj, to_field_name):
+        result = super().serialize_result(obj, to_field_name)
+        label = f"{obj.thickness_mm}x{obj.width_mm}x{obj.length_mm}mm"
+        if obj.species_label:
+            label += f" ({obj.species_label})"
+        result["text"] = label
+        return result
+
+
 @admin.register(Lumber)
 class LumberAdmin(ModelAdmin):
     form = LumberAdminForm
     inlines = [LumberSourceForLumberInline]
+
+    def autocomplete_view(self, request):
+        return LumberAutocompleteJsonView.as_view(model_admin=self)(request)
+
     list_display = [
         "dims_display",
         "count_display",
